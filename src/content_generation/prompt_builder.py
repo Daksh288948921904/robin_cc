@@ -1380,8 +1380,15 @@ def build_dynamic_prompt(
         "A statistic that proves consequence belongs in the stakes paragraph. "
         "A number that supports analysis belongs in the context paragraph. "
         "Do not cluster all quotes together or all numbers together.\n\n"
-        "ATTRIBUTION RULE: Attribute every contested or significant claim to its source: "
+        "ATTRIBUTION RULE: Attribute every contested or significant claim to its source. "
+        "Use the named institution or person from the source material: "
         "'According to [institution]...' or '[Name] told reporters...'. "
+        "When a claim comes from a news report rather than a named institution, "
+        "attribute it to the specific publication shown in SOURCE MATERIAL "
+        "(e.g. 'The Times of India reported...', 'ANI reported...'). "
+        "NEVER write 'multiple sources', 'multiple reports', 'various sources', "
+        "'several sources', or 'sources said' — these are banned attribution phrases. "
+        "Name the specific source or institution every time. "
         "Never state a disputed fact as if it were settled.\n\n"
         "OPENING RULE: The first paragraph answers Who, What, Where, When, and Why "
         "in 2-3 sentences using the single most newsworthy confirmed fact as the opening clause. "
@@ -1426,9 +1433,12 @@ def build_dynamic_prompt(
         "'has sparked debate', 'raises questions about', "
         "'underscored the importance', 'highlighted the need', "
         "'at a critical juncture', 'crucial', 'landmark', 'historic', "
-        "'unprecedented', 'sparking', ' amid '.\n\n"
+        "'unprecedented', 'sparking', ' amid ', "
+        "'multiple sources', 'multiple reports', 'various sources', "
+        "'several sources', 'sources said', 'sources told', 'sources close'.\n\n"
         "If you are about to write a banned phrase: stop, delete it, "
-        "write a specific verified fact from sources instead."
+        "write a specific verified fact from sources instead. "
+        "For attribution, name the specific publication or institution from SOURCE MATERIAL."
     )
 
     dev_count = "2-3 paragraphs" if is_rich else ("1 paragraph" if is_thin else "1-2 paragraphs")
@@ -1681,6 +1691,14 @@ def validate_article_dynamic(article: Dict, audit: AuditResult) -> Dict:
         "unprecedented",
         "sparking",
         " amid ",
+        # Attribution phrases that hide source names
+        "multiple sources",
+        "multiple reports",
+        "various sources",
+        "several sources",
+        "sources said",
+        "sources told",
+        "sources close",
     ]
 
     for phrase in BANNED_PHRASES:

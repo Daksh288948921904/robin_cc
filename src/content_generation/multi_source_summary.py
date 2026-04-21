@@ -1,0 +1,203 @@
+"""
+OSI News — Multi-Source Summary Generator
+==========================================
+Synthesises a publishable news article from a main article +
+ONLY the similar/relevant coverage articles found by the similarity search.
+
+The output is a channel-ready article that:
+  • Uses ONLY the main article + its matching coverage (not all 130 articles)
+  • Weaves all source perspectives into one coherent narrative
+  • Names every contributing outlet explicitly
+  • Is attribution-clean and publication-ready
+"""
+
+import os
+import logging
+from datetime import datetime
+from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+def _get_groq_client():
+    """Build a bare Groq client from environment variables."""
+    from groq import Groq
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    # Try key pool: GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3 …
+    key = os.getenv("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError("No GROQ_API_KEY found in environment")
+    return Groq(api_key=key)
+
+
+def _build_prompt(main_article: Dict, coverage: List[Dict]) -> str:
+    """
+    Build the synthesis prompt using ONLY the main article and its
+    relevant coverage articles — never the full article pool.
+    """
+    main_title  = main_article.get("heading", "Untitled")
+    main_source = main_article.get("source_name", "Unknown")
+    main_body   = (main_article.get("story", "") or "")[:2000]
+
+    # Build source digest from coverage articles only
+    digest_lines = []
+    for i, art in enumerate(coverage, 1):
+        src   = art.get("source_name", "Unknown")
+        title = art.get("heading", "")
+        body  = (art.get("story", "") or "")[:600]
+        url   = art.get("source_url", "")
+        sim   = art.get("similarity", 0)
+        digest_lines.append(
+            f"SOURCE {i} — {src}  (relevance: {int(sim*100)}%)\n"
+            f"Headline: {title}\n"
+            f"Content:  {body}\n"
+            f"URL:      {url}"
+        )
+
+    source_digest = "\n\n".join(digest_lines) if digest_lines else "(No additional coverage found)"
+    today = datetime.utcnow().strftime("%B %d, %Y")
+    n_sources = 1 + len(coverage)
+
+    return f"""You are a senior news editor at robin cc, a global news channel.
+
+TASK: Write a comprehensive, publication-ready news article synthesising {n_sources} outlet(s) on the SAME story.
+
+━━━ PRIMARY SOURCE ({main_source}) ━━━
+Headline: {main_title}
+{main_body}
+
+━━━ ADDITIONAL COVERAGE ━━━
+{source_digest}
+
+━━━ WRITING RULES ━━━
+1. LANGUAGE: The entire output — TITLE, BYLINE, LOCATION, all headings, all body paragraphs — MUST be in English only. If any source content is in another language, translate it accurately first, then write the article in English. Never output a single word of any other language.
+2. Write 800-1000 words total, split across 6-7 thematic sections.
+3. Each section heading MUST be 2–3 words only — short, punchy, and derived from the story's own themes and key actors.
+4. Weave ALL source perspectives into ONE unified narrative voice. Do NOT name any outlet, newspaper, or broadcaster anywhere in the article body.
+5. Write all facts directly and authoritatively — no "according to", "reported by", or any source attribution in the text.
+6. All source credit goes ONLY in the structured Sources list at the end — never inline.
+7. Active voice. Clear paragraph breaks. Journalism style.
+8. Do NOT fabricate facts, quotes, or details not present above.
+9. Derive the most specific dateline location you can from the story content (city or country). If unclear, use the region.
+10. Output format EXACTLY as shown below (## marks each section):
+
+TITLE: <compelling headline — 8–14 words>
+BYLINE: robin cc | {today}
+LOCATION: <CITY or COUNTRY where the story is happening>
+---
+<strong opening lede — 2–3 sentences, the single most important fact first>
+
+## <2-3 word heading>
+
+<2–3 paragraphs — core facts>
+
+## <2-3 word heading>
+
+<2–3 paragraphs — context, reactions, secondary angles>
+
+## <2-3 word heading>
+
+<1–2 paragraphs — implications or outlook>
+
+Write the article now:
+"""
+
+
+def generate_summary(
+    main_article: Dict,
+    coverage: List[Dict],
+    model: str = "llama-3.3-70b-versatile",
+) -> Optional[Dict]:
+    """
+    Generate a publishable multi-source news article.
+
+    Args:
+        main_article: The primary article the user clicked on.
+        coverage:     Similar articles from other sources ONLY
+                      (output of similarity search, not all articles).
+        model:        Groq model to use.
+
+    Returns:
+        Dict with keys: title, byline, body, sources_list, generated_at
+        or None on failure.
+    """
+    try:
+        client = _get_groq_client()
+    except Exception as e:
+        logger.error("Groq client init failed: %s", e)
+        raise
+
+    prompt = _build_prompt(main_article, coverage)
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a professional news editor. Write publication-ready journalism. "
+                        "Be precise, factual, and name sources explicitly. "
+                        "CRITICAL: Your entire output must be in English only — title, headings, and body. "
+                        "If source material is in another language, translate it first, then write in English. "
+                        "Output ONLY the article in the requested format — no preamble, no commentary."
+                    )
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.35,
+            max_tokens=1100,
+        )
+
+        raw_text = response.choices[0].message.content.strip()
+        return _parse_response(raw_text, main_article, coverage)
+
+    except Exception as exc:
+        logger.error("Groq API call failed: %s", exc)
+        raise
+
+
+def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
+    """Parse LLM output into structured fields."""
+    import re
+
+    title_match    = re.search(r"TITLE:\s*(.+)",    raw)
+    byline_match   = re.search(r"BYLINE:\s*(.+)",   raw)
+    location_match = re.search(r"LOCATION:\s*(.+)", raw)
+
+    title    = title_match.group(1).strip()    if title_match    else (main_article.get("heading") or "News Summary")
+    byline   = byline_match.group(1).strip()   if byline_match   else f"robin cc | {datetime.utcnow().strftime('%B %d, %Y')}"
+    location = location_match.group(1).strip() if location_match else (main_article.get("region") or "")
+
+    # Strip header lines to get body
+    body = raw
+    for pat in (r"TITLE:[^\n]*\n?", r"BYLINE:[^\n]*\n?", r"LOCATION:[^\n]*\n?", r"-{3,}\n?"):
+        body = re.sub(pat, "", body)
+    body = body.strip()
+
+    # Build deduplicated sources list from main + coverage ONLY
+    sources_list = []
+    seen: set = set()
+    for art in [main_article] + coverage:
+        src = art.get("source_name", "Unknown")
+        if src not in seen:
+            sources_list.append({
+                "name":       src,
+                "headline":   art.get("heading", ""),
+                "url":        art.get("source_url", ""),
+                "region":     art.get("region", ""),
+                "similarity": art.get("similarity", 1.0 if art is main_article else 0),
+            })
+            seen.add(src)
+
+    return {
+        "title":        title,
+        "byline":       byline,
+        "location":     location,
+        "body":         body,
+        "raw_text":     raw,
+        "sources_list": sources_list,
+        "generated_at": datetime.utcnow().isoformat(),
+    }

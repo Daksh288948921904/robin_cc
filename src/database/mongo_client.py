@@ -211,56 +211,84 @@ class MongoDBClient:
     def save_article(self, article_dict: Dict[str, Any]) -> Optional[str]:
         """
         Save an article to the database.
-        
+
+        Deduplication is time-windowed: an article whose source_url was
+        already scraped within the last 24 hours is skipped.  URLs older
+        than 24 hours are allowed to be re-scraped (the document is
+        replaced/upserted so stale data is refreshed).
+
         Args:
             article_dict: Article data dictionary.
-            
+
         Returns:
-            str: Inserted article ID, or None on failure.
+            str: Inserted/updated article ID, or None if duplicate within 24 h.
         """
         if not self._ensure_connected():
             return None
-        
+
         try:
-            # Add metadata with retry tracking fields
+            # ── 24-hour URL deduplication ─────────────────────────────────
+            source_url = article_dict.get("source_url")
+            if source_url:
+                cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+                recent_match = self.articles.find_one(
+                    {"source_url": source_url, "scraped_at": {"$gte": cutoff_24h}},
+                    {"_id": 1},
+                )
+                if recent_match:
+                    logger.debug(
+                        f"Skipping URL scraped within last 24 h: {source_url[:80]}"
+                    )
+                    return None
+
+            # ── Build document ────────────────────────────────────────────
             article = {
                 **article_dict,
-                # Ensure scraped_at is always a BSON date, never an ISO string
                 "scraped_at": self._coerce_datetime(article_dict.get("scraped_at", datetime.utcnow())),
                 "upload_status": article_dict.get("upload_status", "pending"),
-                # Retry tracking fields
                 "upload_retry_count": article_dict.get("upload_retry_count", 0),
                 "upload_last_retry": article_dict.get("upload_last_retry", None),
-                "upload_failure_reason": article_dict.get("upload_failure_reason", None)
+                "upload_failure_reason": article_dict.get("upload_failure_reason", None),
             }
 
-            # MongoDB uses the `language` field as a text-index language specifier.
-            # Values like 'hi' (Hindi) and 'ar' (Arabic) are not supported and cause
-            # error 17262. Copy to `content_language` and remove from the DB document.
-            # Note: `article` is already a shallow copy ({**article_dict, ...}) so
-            # this does not mutate the caller's original dictionary.
+            # MongoDB uses `language` as a text-index language specifier.
+            # Unsupported values like 'hi' / 'ar' raise error 17262.
             if "language" in article:
                 article["content_language"] = article["language"]
                 del article["language"]
 
-            # Only include hocalwire_feed_id if it has a real value (schema requires string, not null)
             if article_dict.get("hocalwire_feed_id"):
                 article["hocalwire_feed_id"] = article_dict["hocalwire_feed_id"]
-            
-            # Generate embedding for duplicate detection if story exists
+
             if "story" in article and article["story"]:
                 emb = self._get_embedding(article["story"])
                 if emb is not None:
                     article["embedding"] = emb
-            
-            result = self.articles.insert_one(article)
-            article_id = str(result.inserted_id)
-            
+
+            # ── Upsert so re-scraped (>24 h old) URLs refresh their data ─
+            if source_url:
+                result = self.articles.replace_one(
+                    {"source_url": source_url},
+                    article,
+                    upsert=True,
+                )
+                article_id = (
+                    str(result.upserted_id)
+                    if result.upserted_id
+                    else str(
+                        self.articles.find_one({"source_url": source_url}, {"_id": 1})["_id"]
+                    )
+                )
+            else:
+                result = self.articles.insert_one(article)
+                article_id = str(result.inserted_id)
+
             logger.debug(f"Saved article: {article.get('heading', 'Unknown')[:50]}...")
             return article_id
-            
+
         except DuplicateKeyError:
-            logger.warning(f"Duplicate article detected: {article_dict.get('source_url', 'Unknown')}")
+            # Fallback safety-net — should not normally be reached now.
+            logger.warning(f"Duplicate key on insert: {article_dict.get('source_url', 'Unknown')}")
             return None
         except Exception as e:
             logger.error(f"Error saving article: {e}")

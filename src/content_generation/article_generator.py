@@ -773,16 +773,33 @@ def generate_fallback_article(trend: Dict) -> Optional[Dict]:
         
         if not source_articles:
             return None
-        
-        # Create simple headline
-        heading = f"Multiple Sources Report on {topic}"
-        
+
+        # Collect actual source names for the heading/body
+        source_names = list(dict.fromkeys(
+            a.get("source_name", "").strip()
+            for a in source_articles
+            if a.get("source_name", "").strip() and a.get("source_name") != "Unknown"
+        ))
+        if not source_names:
+            source_names = ["multiple outlets"]
+
+        # Create simple headline using actual source names
+        if len(source_names) == 1:
+            heading = f"{source_names[0]} Reports on {topic}"
+            byline = f"{source_names[0]} reported on"
+        elif len(source_names) == 2:
+            heading = f"{source_names[0]}, {source_names[1]} Report on {topic}"
+            byline = f"{source_names[0]} and {source_names[1]} reported on"
+        else:
+            heading = f"{source_names[0]}, {source_names[1]}, and Others Report on {topic}"
+            byline = f"{source_names[0]}, {source_names[1]}, and {len(source_names) - 2} other outlet(s) reported on"
+
         # Combine article summaries
         story_parts = [f"**{topic}**\n"]
-        
+
         dateline = infer_dateline(source_articles)
         story_parts.append(f"{dateline}, {datetime.now().strftime('%B %d')} – ")
-        story_parts.append(f"Multiple news sources are reporting on developments related to {topic}.\n\n")
+        story_parts.append(f"{byline} developments related to {topic}.\n\n")
         
         for i, article in enumerate(source_articles[:5], 1):
             source = article.get('source_name', 'Unknown')
