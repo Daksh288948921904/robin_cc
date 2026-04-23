@@ -234,6 +234,11 @@
       </section>
 
       <div class="reader-footer">
+        <button class="publish-btn" id="publish-btn" onclick="publishToHocalwire()" style="display:none">
+          <svg class="publish-icon" width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3.5 6l3 3 3-3M1 11h11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span id="publish-label">Publish to Hocalwire</span>
+          <span class="publish-spinner hidden" id="publish-spinner"></span>
+        </button>
         <button class="reader-json-btn" onclick="toggleRawJson()">{ } Raw JSON</button>
         <pre class="reader-raw hidden" id="reader-raw"></pre>
       </div>

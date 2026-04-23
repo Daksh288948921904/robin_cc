@@ -340,6 +340,8 @@ function openReader(i) {
   if (igOuter) igOuter.style.display = 'none';
   $('social-twitter-section').innerHTML  = '';
   $('social-instagram-section').innerHTML = '';
+  const pb = $('publish-btn');
+  if (pb) { pb.style.display = 'none'; pb.disabled = false; $('publish-label').textContent = 'Publish to Hocalwire'; $('publish-spinner').classList.add('hidden'); }
 
   readerScroll.scrollTop = 0;
   readerProg.style.width = '0%';
@@ -572,6 +574,10 @@ async function generateSummary(realIdx) {
         </div>
       </div>`;
 
+    // Show the footer publish button now that a summary exists
+    const pb = $('publish-btn');
+    if (pb) pb.style.display = '';
+
     EDIT_MODE = false;
   } catch(e) {
     $('summary-section').innerHTML = `<div class="coverage-empty">Network error: ${esc(e.message)}</div>`;
@@ -607,6 +613,47 @@ async function downloadDocx(realIdx) {
     toast('ok','Downloaded successfully!');
   } catch(e) {
     toast('err',`Download error: ${e.message}`);
+  }
+}
+
+// ── Hocalwire publish ────────────────────────────────────────
+async function publishToHocalwire() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) { toast('err', 'No article selected'); return; }
+
+  const pb      = $('publish-btn');
+  const label   = $('publish-label');
+  const spinner = $('publish-spinner');
+
+  pb.disabled = true;
+  label.textContent = 'Publishing…';
+  spinner.classList.remove('hidden');
+
+  try {
+    const edited = collectEditedContent();
+    const res  = await fetch(`/api/articles/${realIdx}/publish`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify(edited),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.status === 'success') {
+      label.textContent = '✓ Published';
+      spinner.classList.add('hidden');
+      const feedNote = data.feed_id ? ` · Feed ID: ${data.feed_id}` : '';
+      toast('ok', `Published to Hocalwire${feedNote}`);
+    } else {
+      pb.disabled = false;
+      label.textContent = 'Publish to Hocalwire';
+      spinner.classList.add('hidden');
+      toast('err', data.message || 'Publish failed');
+    }
+  } catch(e) {
+    pb.disabled = false;
+    label.textContent = 'Publish to Hocalwire';
+    spinner.classList.add('hidden');
+    toast('err', `Publish error: ${e.message}`);
   }
 }
 

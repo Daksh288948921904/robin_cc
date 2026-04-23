@@ -399,6 +399,63 @@ def generate_social(idx: int):
     return jsonify({'status': 'success', 'social': result})
 
 
+@app.route('/api/articles/<int:idx>/publish', methods=['POST'])
+def publish_to_hocalwire(idx: int):
+    """
+    Publish the AI-synthesised summary for article[idx] to Hocalwire CMS.
+    Requires a summary to have been generated first.
+    """
+    if idx < 0 or idx >= len(SCRAPED_ARTICLES):
+        return jsonify({'status': 'error', 'message': 'Article not found'}), 404
+
+    key = str(idx)
+    cached = SUMMARIES.get(key)
+    if not cached:
+        return jsonify({
+            'status': 'error',
+            'message': 'Generate the AI Synthesis first before publishing.'
+        }), 400
+
+    main_article = SCRAPED_ARTICLES[idx]
+
+    # Allow caller to pass edited title/body
+    body_json = request.get_json(silent=True) or {}
+    title = body_json.get('edited_title') or cached.get('title') or main_article.get('heading', '')
+    body  = body_json.get('edited_body')  or cached.get('body', '')
+
+    if not title or not body:
+        return jsonify({'status': 'error', 'message': 'Summary has no title or body'}), 400
+
+    try:
+        from src.api_integrations.hocalwire_uploader import upload_to_hocalwire
+
+        article_payload = {
+            'heading':   title,
+            'story':     body,
+            'image_url': main_article.get('image_url', ''),
+            'language':  'en',
+        }
+
+        success = upload_to_hocalwire(article_payload)
+        if success:
+            feed_id = article_payload.get('hocalwire_feed_id', '')
+            return jsonify({
+                'status':  'success',
+                'message': 'Published to Hocalwire successfully.',
+                'feed_id': feed_id,
+            })
+        else:
+            return jsonify({
+                'status':  'error',
+                'message': article_payload.get('upload_error', 'Hocalwire rejected the upload.'),
+            }), 502
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        app.logger.error('Hocalwire publish error: %s\n%s', e, tb)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/api/articles/<int:idx>/download', methods=['POST'])
 def download_docx(idx: int):
     """
