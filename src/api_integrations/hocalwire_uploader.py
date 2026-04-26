@@ -95,19 +95,20 @@ def login_to_hocalwire() -> Optional[str]:
     if _hocalwire_session_token:
         return _hocalwire_session_token
 
+    # Use static session ID from env first (browser-extracted, most reliable)
+    static_session_id = os.getenv('HOCALWIRE_USER_SESSION_ID', '').strip()
+    if static_session_id:
+        logger.info("Using static Hocalwire session ID from env")
+        _hocalwire_session_token = static_session_id
+        return _hocalwire_session_token
+
     # Try dynamic login if credentials are available
     email = os.getenv('HOCALWIRE_EMAIL', '').strip()
     password = os.getenv('HOCALWIRE_PASSWORD', '').strip()
     api_key = os.getenv('HOCALWIRE_API_KEY', '').strip()
 
     if not email or not password:
-        # Fall back to static session ID if no credentials
-        static_session_id = os.getenv('HOCALWIRE_USER_SESSION_ID', '').strip()
-        if static_session_id:
-            logger.info("No email/password set — using static session ID from .env")
-            _hocalwire_session_token = static_session_id
-            return _hocalwire_session_token
-        logger.warning("No HOCALWIRE_EMAIL/PASSWORD or HOCALWIRE_USER_SESSION_ID set. Using empty session.")
+        logger.warning("No HOCALWIRE_USER_SESSION_ID or HOCALWIRE_EMAIL/PASSWORD set. Using empty session.")
         return None
 
     base_url = get_login_base_url()
