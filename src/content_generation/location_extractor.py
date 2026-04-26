@@ -29,70 +29,70 @@ except ImportError:
 # Simplified category mappings for English categories only
 # Using generic categories that display in English on Hocalwire
 LOCATION_CATEGORY_MAP = {
-    # All International locations → World/International category
-    'united states': ('1', 'World'),
-    'usa': ('1', 'World'),
-    'washington': ('1', 'World'),
-    'new york': ('1', 'World'),
-    'dubai': ('1', 'World'),
-    'uae': ('1', 'World'),
-    
-    'united kingdom': ('1', 'World'),
-    'uk': ('1', 'World'),
-    'london': ('1', 'World'),
-    'heathrow': ('1', 'World'),
-    
-    'china': ('1', 'World'),
-    'beijing': ('1', 'World'),
-    
-    'russia': ('1', 'World'),
-    'moscow': ('1', 'World'),
-    
-    'iran': ('1', 'World'),
-    'tehran': ('1', 'World'),
-    
-    'yemen': ('1', 'World'),
-    'syria': ('1', 'World'),
-    'iraq': ('1', 'World'),
-    'afghanistan': ('1', 'World'),
-    
-    'pakistan': ('1', 'World'),
-    'islamabad': ('1', 'World'),
-    'karachi': ('1', 'World'),
-    
-    'france': ('1', 'World'),
-    'paris': ('1', 'World'),
-    
-    'germany': ('1', 'World'),
-    'berlin': ('1', 'World'),
-    
-    'japan': ('1', 'World'),
-    'tokyo': ('1', 'World'),
-    
-    'australia': ('1', 'World'),
-    'sydney': ('1', 'World'),
-    
-    'greenland': ('1', 'World'),
-    'denmark': ('1', 'World'),
-    
-    # Indian locations → India category
-    'mumbai': ('2', 'India'),
-    'pune': ('2', 'India'),
-    'delhi': ('2', 'India'),
-    'new delhi': ('2', 'India'),
-    'bangalore': ('2', 'India'),
-    'bengaluru': ('2', 'India'),
-    'chennai': ('2', 'India'),
-    'kolkata': ('2', 'India'),
-    'hyderabad': ('2', 'India'),
-    'ahmedabad': ('2', 'India'),
-    'jaipur': ('2', 'India'),
-    'lucknow': ('2', 'India'),
-    'india': ('2', 'India'),
+    # All International locations → default category 770
+    'united states': ('770', 'World'),
+    'usa': ('770', 'World'),
+    'washington': ('770', 'World'),
+    'new york': ('770', 'World'),
+    'dubai': ('770', 'World'),
+    'uae': ('770', 'World'),
+
+    'united kingdom': ('770', 'World'),
+    'uk': ('770', 'World'),
+    'london': ('770', 'World'),
+    'heathrow': ('770', 'World'),
+
+    'china': ('770', 'World'),
+    'beijing': ('770', 'World'),
+
+    'russia': ('770', 'World'),
+    'moscow': ('770', 'World'),
+
+    'iran': ('770', 'World'),
+    'tehran': ('770', 'World'),
+
+    'yemen': ('770', 'World'),
+    'syria': ('770', 'World'),
+    'iraq': ('770', 'World'),
+    'afghanistan': ('770', 'World'),
+
+    'pakistan': ('770', 'World'),
+    'islamabad': ('770', 'World'),
+    'karachi': ('770', 'World'),
+
+    'france': ('770', 'World'),
+    'paris': ('770', 'World'),
+
+    'germany': ('770', 'World'),
+    'berlin': ('770', 'World'),
+
+    'japan': ('770', 'World'),
+    'tokyo': ('770', 'World'),
+
+    'australia': ('770', 'World'),
+    'sydney': ('770', 'World'),
+
+    'greenland': ('770', 'World'),
+    'denmark': ('770', 'World'),
+
+    # Indian locations → default category 770
+    'mumbai': ('770', 'India'),
+    'pune': ('770', 'India'),
+    'delhi': ('770', 'India'),
+    'new delhi': ('770', 'India'),
+    'bangalore': ('770', 'India'),
+    'bengaluru': ('770', 'India'),
+    'chennai': ('770', 'India'),
+    'kolkata': ('770', 'India'),
+    'hyderabad': ('770', 'India'),
+    'ahmedabad': ('770', 'India'),
+    'jaipur': ('770', 'India'),
+    'lucknow': ('770', 'India'),
+    'india': ('770', 'India'),
 }
 
-# Default category for unrecognized locations (use World for safety)
-DEFAULT_CATEGORY = ('1', 'World')
+# Default category for unrecognized locations
+DEFAULT_CATEGORY = ('770', 'General')
 
 
 def get_groq_client():

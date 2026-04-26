@@ -434,6 +434,7 @@ def publish_to_hocalwire(idx: int):
             'story':     body,
             'image_url': main_article.get('image_url', ''),
             'language':  'en',
+            'location':  cached.get('location') or main_article.get('location', 'Hyderabad'),
         }
 
         success = upload_to_hocalwire(article_payload)

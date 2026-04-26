@@ -5,7 +5,7 @@ Uploads generated articles to Hocalwire CMS via their API.
 Handles authentication, geocoding, image URLs, and batch uploads.
 
 API Reference:
-  - Base URL: https://democracynewslive.com/dev/h-api/
+  - Base URL: https://democracynews.hocalwire.in/dev/h-api/
   - Auth: 's-id' header with API key
   - Login: POST /login?email=...&password=...
   - Create Feed: POST /createFeedV2
@@ -126,11 +126,12 @@ def login_to_hocalwire() -> Optional[str]:
         result = response.json()
 
         # Extract session token from response
+        logger.debug(f"Hocalwire login response: {result}")
         token = (
             result.get('sessionId') or
             result.get('session_id') or
             result.get('token') or
-            result.get('data', {}).get('sessionId') if isinstance(result.get('data'), dict) else None
+            (result.get('data', {}).get('sessionId') if isinstance(result.get('data'), dict) else None)
         )
 
         if token:
@@ -179,7 +180,7 @@ DEFAULT_COORDINATES = {
     'bengaluru': (12.9716, 77.5946),
     'chennai': (13.0827, 80.2707),
     'kolkata': (22.5726, 88.3639),
-    'hyderabad': (17.3850, 78.4867),
+    'hyderabad': (17.393323538169245, 78.369494773754326),
     'pune': (18.5204, 73.8567),
     'ahmedabad': (23.0225, 72.5714),
     'jaipur': (26.9124, 75.7873),
@@ -215,7 +216,7 @@ def get_coordinates(location: str) -> Tuple[float, float]:
         Tuple of (latitude, longitude).
     """
     if not location:
-        return (28.6139, 77.2090)  # New Delhi default
+        return (17.393323538169245, 78.369494773754326)  # Hyderabad default
     
     # Normalize location
     location_lower = location.lower().strip()
@@ -236,9 +237,9 @@ def get_coordinates(location: str) -> Tuple[float, float]:
         except Exception as e:
             logger.warning(f"Geocoding failed for '{location}': {e}")
     
-    # Default to New Delhi
+    # Default to Hyderabad
     logger.debug(f"Using default coordinates for '{location}'")
-    return (28.6139, 77.2090)
+    return (17.393323538169245, 78.369494773754326)
 
 
 # ===========================================
@@ -434,13 +435,13 @@ def upload_to_hocalwire(
             logger.warning(f"Location extraction failed: {e}, using fallback")
             # Fallback to article-provided location
             location = article.get('location') or article.get('dateline', 'India')
-            category_id = os.getenv('HOCALWIRE_CATEGORY_ID', '799')  # Default to India
-            category_name = 'INDIA'
+            category_id = os.getenv('HOCALWIRE_CATEGORY_ID', '770')
+            category_name = 'General'
     else:
         # Fallback: use article-provided location
-        location = article.get('location') or article.get('dateline', 'India')
-        category_id = os.getenv('HOCALWIRE_CATEGORY_ID', '799')
-        category_name = 'INDIA'
+        location = article.get('location') or article.get('dateline', 'Hyderabad')
+        category_id = os.getenv('HOCALWIRE_CATEGORY_ID', '770')
+        category_name = 'General'
     
     # Clean up location format
     if location.isupper():
@@ -528,7 +529,8 @@ def upload_to_hocalwire(
         
         # Parse response
         result = response.json()
-        
+        logger.debug(f"Hocalwire upload response ({response.status_code}): {result}")
+
         if result.get('status') == 'success' or result.get('feedId'):
             feed_id = str(result.get('feedId', 'unknown'))
             logger.success(f"✅ Uploaded successfully - Feed ID: {feed_id}")

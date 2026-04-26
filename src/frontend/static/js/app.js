@@ -493,6 +493,42 @@ function toggleEditMode() {
   }
 }
 
+// ── Category picker ──────────────────────────────────────────
+const CATEGORIES = ['World','Technology','Politics','Sports','Business','Entertainment','Science','Health','Environment','Crime','Society','Comedy'];
+
+function openCategoryPicker(btn) {
+  // Remove any existing picker
+  const existing = document.getElementById('cat-picker-popup');
+  if (existing) { existing.remove(); return; }
+
+  const popup = document.createElement('div');
+  popup.id = 'cat-picker-popup';
+  popup.className = 'cat-picker-popup';
+  popup.innerHTML = CATEGORIES.map(c =>
+    `<button class="cat-picker-item${btn.textContent.trim()===c?' active':''}" onclick="selectCategory(this,'${c}')">${c}</button>`
+  ).join('');
+
+  btn.parentNode.insertBefore(popup, btn.nextSibling);
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e) {
+      if (!popup.contains(e.target) && e.target !== btn) {
+        popup.remove();
+        document.removeEventListener('click', handler);
+      }
+    });
+  }, 0);
+}
+
+function selectCategory(item, category) {
+  const btn = document.querySelector('.sum-category-btn');
+  if (btn) btn.textContent = category;
+  if (CURRENT_SUMM) CURRENT_SUMM.category = category;
+  const popup = document.getElementById('cat-picker-popup');
+  if (popup) popup.remove();
+}
+
 // ── Collect edited content from DOM ─────────────────────────
 function collectEditedContent() {
   const titleEl = document.querySelector('.sum-title');
@@ -509,7 +545,10 @@ function collectEditedContent() {
     });
   });
 
-  return { edited_title: title, edited_body: body.trim() };
+  const catBtn  = document.querySelector('.sum-category-btn');
+  const category = catBtn ? catBtn.textContent.trim() : (CURRENT_SUMM && CURRENT_SUMM.category) || 'World';
+
+  return { edited_title: title, edited_body: body.trim(), category };
 }
 
 async function generateSummary(realIdx) {
@@ -553,6 +592,7 @@ async function generateSummary(realIdx) {
         <h2 class="sum-title" contenteditable="false">${esc(s.title||'News Brief')}</h2>
         <div class="sum-meta-row">
           <span class="sum-badge">AI BRIEFING</span>
+          <button class="sum-category-btn" onclick="openCategoryPicker(this)" title="Change category">${esc(s.category||'World')}</button>
           <span class="sum-meta-sources">${(s.sources_list||[]).length} source${(s.sources_list||[]).length!==1?'s':''} synthesised</span>
         </div>
         <div class="sum-divider"></div>

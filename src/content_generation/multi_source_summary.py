@@ -86,6 +86,7 @@ Headline: {main_title}
 TITLE: <compelling headline — 8–14 words>
 BYLINE: robin cc | {today}
 LOCATION: <CITY or COUNTRY where the story is happening>
+CATEGORY: <single category label — choose the single best fit from: World, Technology, Politics, Sports, Business, Entertainment, Science, Health, Environment, Crime, Society, Comedy>
 ---
 <strong opening lede — 2–3 sentences, the single most important fact first>
 
@@ -166,14 +167,16 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
     title_match    = re.search(r"TITLE:\s*(.+)",    raw)
     byline_match   = re.search(r"BYLINE:\s*(.+)",   raw)
     location_match = re.search(r"LOCATION:\s*(.+)", raw)
+    category_match = re.search(r"CATEGORY:\s*(.+)", raw)
 
     title    = title_match.group(1).strip()    if title_match    else (main_article.get("heading") or "News Summary")
     byline   = byline_match.group(1).strip()   if byline_match   else f"robin cc | {datetime.utcnow().strftime('%B %d, %Y')}"
     location = location_match.group(1).strip() if location_match else (main_article.get("region") or "")
+    category = category_match.group(1).strip() if category_match else "World"
 
     # Strip header lines to get body
     body = raw
-    for pat in (r"TITLE:[^\n]*\n?", r"BYLINE:[^\n]*\n?", r"LOCATION:[^\n]*\n?", r"-{3,}\n?"):
+    for pat in (r"TITLE:[^\n]*\n?", r"BYLINE:[^\n]*\n?", r"LOCATION:[^\n]*\n?", r"CATEGORY:[^\n]*\n?", r"-{3,}\n?"):
         body = re.sub(pat, "", body)
     body = body.strip()
 
@@ -196,6 +199,7 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
         "title":        title,
         "byline":       byline,
         "location":     location,
+        "category":     category,
         "body":         body,
         "raw_text":     raw,
         "sources_list": sources_list,
