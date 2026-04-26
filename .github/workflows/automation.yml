@@ -59,7 +59,7 @@ jobs:
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
 
           # Hocalwire CMS
-          HOCALWIRE_API_URL: https://democracynewslive.com/dev/h-api/createFeedV2
+          HOCALWIRE_API_URL: https://democracynews.hocalwire.in/dev/h-api/createFeedV2
           HOCALWIRE_API_KEY: ${{ secrets.HOCALWIRE_API_KEY }}
           HOCALWIRE_USER_SESSION_ID: ${{ secrets.HOCALWIRE_USER_SESSION_ID }}
           HOCALWIRE_EMAIL: ${{ secrets.HOCALWIRE_EMAIL }}
