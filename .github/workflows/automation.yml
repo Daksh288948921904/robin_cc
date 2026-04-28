@@ -34,6 +34,12 @@ jobs:
       - name: Pre-download sentence-transformer model
         run: python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
+      - name: Show runner public IP (for Hocalwire whitelist verification)
+        run: |
+          echo "Runner public IP:"
+          curl -s https://ifconfig.me || curl -s https://api.ipify.org || curl -s https://checkip.amazonaws.com
+          echo ""
+
       - name: Run automation pipeline
         env:
           # MongoDB Atlas
