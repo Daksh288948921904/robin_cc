@@ -48,13 +48,18 @@ def _autoload():
 
 
 def _prewarm_model():
-    """Load sentence-transformer model at startup so first request doesn't block."""
-    try:
-        from src.utils.similarity import _get_model
-        _get_model()
-        print('[wsgi] Sentence-transformer model pre-loaded')
-    except Exception as exc:
-        print(f'[wsgi] Model pre-warm failed (non-fatal): {exc}')
+    """Load sentence-transformer model in background so it doesn't block startup."""
+    import threading
+    def _load():
+        try:
+            import time
+            time.sleep(5)  # let gunicorn fully start first
+            from src.utils.similarity import _get_model
+            _get_model()
+            print('[wsgi] Sentence-transformer model pre-loaded (background)')
+        except Exception as exc:
+            print(f'[wsgi] Model pre-warm failed (non-fatal): {exc}')
+    threading.Thread(target=_load, daemon=True).start()
 
 
 _autoload()
