@@ -1,0 +1,52 @@
+# ============================================================
+# systemd service — robin cc Flask app
+# Place at: /etc/systemd/system/robin-cc.service
+#
+# Commands:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable robin-cc
+#   sudo systemctl start  robin-cc
+#   sudo systemctl status robin-cc
+#   sudo journalctl -u robin-cc -f   (live logs)
+# ============================================================
+
+[Unit]
+Description=robin cc News Intelligence (gunicorn)
+After=network.target
+Wants=network-online.target
+
+[Service]
+# ── Run as a dedicated user for security ─────────────────────
+User=www-data
+Group=www-data
+
+# ── Working directory = project root ─────────────────────────
+WorkingDirectory=/var/www/robin-cc
+
+# ── Load all env variables from .env file ────────────────────
+EnvironmentFile=/var/www/robin-cc/.env
+
+# ── Start command ────────────────────────────────────────────
+ExecStart=/var/www/robin-cc/venv/bin/gunicorn \
+    --config /var/www/robin-cc/gunicorn.conf.py \
+    wsgi:app
+
+# ── Graceful reload (zero-downtime config reload) ────────────
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# ── Restart policy ───────────────────────────────────────────
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# ── Process limits ───────────────────────────────────────────
+LimitNOFILE=65536
+
+# ── Logging → journald ───────────────────────────────────────
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=robin-cc
+
+[Install]
+WantedBy=multi-user.target

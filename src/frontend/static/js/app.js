@@ -311,9 +311,14 @@ function openReader(i) {
   ].filter(Boolean).join('<span style="color:var(--border-hi)">·</span>');
 
   const img = a.top_image||a.image_url||'';
-  $('r-image').innerHTML = img
-    ? `<img src="${esc(img)}" alt="" loading="lazy" style="width:100%;border-radius:12px;max-height:400px;object-fit:cover">`
-    : '';
+  $('r-image').innerHTML = `
+    <div id="r-img-container" style="position:relative">
+      ${img ? `<img id="r-scraped-img" src="${esc(img)}" alt="" loading="lazy" style="width:100%;border-radius:12px;max-height:400px;object-fit:cover">` : ''}
+      <div id="r-ai-status" style="margin-top:6px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink4)">
+        <span class="cov-spinner" style="width:9px;height:9px;border-width:1.5px;flex-shrink:0"></span>
+        <span>Generating AI image with SD Turbo…</span>
+      </div>
+    </div>`;
 
   // Markdown → HTML
   const html = (a.story||'')
@@ -355,8 +360,10 @@ function openReader(i) {
   CURRENT_REAL_IDX = realIdx;
   if (realIdx >= 0) {
     loadCoverage(realIdx);
+    loadAIImage(realIdx);
   } else {
     $('coverage-section').innerHTML = coverageEmptyHTML('Could not map to source index.');
+    const s = $('r-ai-status'); if (s) s.remove();
   }
 }
 
@@ -890,6 +897,51 @@ function toggleSocialEdit(platform) {
 
   if (isOn) toast('info', `${isTw ? 'Twitter' : 'Instagram'} reactions unlocked — click any text to edit`);
   else toast('ok', 'Edits saved');
+}
+
+// ── AI Image loader ──────────────────────────────────────────
+async function loadAIImage(realIdx) {
+  const myIdx = realIdx;
+  try {
+    const res  = await fetch(`/api/articles/${realIdx}/image`, {method: 'POST'});
+    const data = await res.json();
+
+    // Guard: user may have navigated to a different article
+    if (CURRENT_REAL_IDX !== myIdx) return;
+
+    const statusEl = $('r-ai-status');
+    if (statusEl) statusEl.remove();
+
+    if (data.status === 'success' && data.image_url) {
+      const container = $('r-img-container');
+      if (!container) return;
+
+      const aiWrap = document.createElement('div');
+      aiWrap.style.position = 'relative';
+
+      const aiImg = document.createElement('img');
+      aiImg.alt = '';
+      aiImg.style.cssText = 'width:100%;border-radius:12px;max-height:400px;object-fit:cover;opacity:0;transition:opacity .4s';
+
+      const badge = document.createElement('span');
+      badge.textContent = 'AI · SD Turbo';
+      badge.style.cssText = 'position:absolute;top:10px;right:10px;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);color:#fff;font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;letter-spacing:.05em';
+
+      aiImg.onload = () => {
+        const scraped = $('r-scraped-img');
+        if (scraped) scraped.style.display = 'none';
+        aiImg.style.opacity = '1';
+      };
+      aiImg.src = data.image_url;
+
+      aiWrap.appendChild(aiImg);
+      aiWrap.appendChild(badge);
+      container.insertBefore(aiWrap, container.firstChild);
+    }
+  } catch(_e) {
+    const statusEl = $('r-ai-status');
+    if (statusEl) statusEl.remove();
+  }
 }
 
 function closeReader() {

@@ -4,6 +4,7 @@ OSI News Automation System - Results Viewer Frontend
 A Flask-based web interface to view scraped articles and their formatting.
 """
 
+import os
 import sys
 import json
 import traceback
@@ -29,13 +30,17 @@ app = Flask(__name__,
             template_folder='templates',
             static_folder='static')
 
-# ── Terminal error logging ──────────────────────────────────────
+# ── Secret key (required for session security in production) ────
+app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(32)
+
+# ── Logging — level driven by LOG_LEVEL env var ─────────────────
+_log_level = getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO)
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=_log_level,
     format='[%(asctime)s] %(levelname)s %(name)s: %(message)s',
     datefmt='%H:%M:%S',
 )
-app.logger.setLevel(logging.DEBUG)
+app.logger.setLevel(_log_level)
 
 @app.after_request
 def log_response(response):
@@ -57,10 +62,15 @@ SCRAPED_ARTICLES = []
 OUTPUT_DIR = PROJECT_ROOT / 'output' / 'json'
 
 # Per-article caches (keyed by article index as string)
-COVERAGES: dict  = {}   # index → list of similar article dicts
-SUMMARIES: dict  = {}   # index → summary dict from multi_source_summary
-TIMELINES: dict  = {}   # index → list of {time, event} dicts
-SOCIALS:   dict  = {}   # index → {twitter: {...}, instagram: {...}}
+COVERAGES:  dict = {}   # index → list of similar article dicts
+SUMMARIES:  dict = {}   # index → summary dict from multi_source_summary
+TIMELINES:  dict = {}   # index → list of {time, event} dicts
+SOCIALS:    dict = {}   # index → {twitter: {...}, instagram: {...}}
+AI_IMAGES:       dict = {}   # index → /static/ai_images/<filename> URL (local)
+AI_IMAGE_PUBLIC: dict = {}  # index → publicly accessible image URL (Pollinations or HF)
+
+# Static directory where AI-generated images are saved and served
+AI_IMAGES_STATIC_DIR = Path(__file__).parent / 'static' / 'ai_images'
 
 # Background scrape job state
 _scrape_state = {
@@ -83,7 +93,7 @@ def _run_scrape(max_articles: int):
     Fetch headlines from 20+ major RSS sources in parallel.
     Results appear in ~15-30 s.
     """
-    global SCRAPED_ARTICLES, _scrape_state, COVERAGES, SUMMARIES
+    global SCRAPED_ARTICLES, _scrape_state, COVERAGES, SUMMARIES, AI_IMAGES, AI_IMAGE_PUBLIC
 
     print(f"\n[Scraper] Starting multi-source RSS fetch — target {max_articles} articles")
     try:
@@ -102,11 +112,13 @@ def _run_scrape(max_articles: int):
             _scrape_state['count'] = len(articles)
             _scrape_state['error'] = None
 
-        # Invalidate stale coverage / summary / timeline caches on new fetch
+        # Invalidate stale caches on new fetch
         COVERAGES.clear()
         SUMMARIES.clear()
         TIMELINES.clear()
         SOCIALS.clear()
+        AI_IMAGES.clear()
+        AI_IMAGE_PUBLIC.clear()
 
         filepath = save_articles_to_json(articles)
         print(f"[Scraper] Done — {len(articles)} articles from "
@@ -216,11 +228,13 @@ def save_to_json_route():
 
 @app.route('/api/load', methods=['POST'])
 def load_from_json():
-    global SCRAPED_ARTICLES, COVERAGES, SUMMARIES, TIMELINES, SOCIALS
+    global SCRAPED_ARTICLES, COVERAGES, SUMMARIES, TIMELINES, SOCIALS, AI_IMAGES, AI_IMAGE_PUBLIC
     COVERAGES.clear()
     SUMMARIES.clear()
     TIMELINES.clear()
     SOCIALS.clear()
+    AI_IMAGES.clear()
+    AI_IMAGE_PUBLIC.clear()
     try:
         filename = None
         if request.json:
@@ -432,7 +446,7 @@ def publish_to_hocalwire(idx: int):
         article_payload = {
             'heading':   title,
             'story':     body,
-            'image_url': main_article.get('image_url', ''),
+            'image_url': AI_IMAGE_PUBLIC.get(key) or main_article.get('top_image') or main_article.get('image_url', ''),
             'language':  'en',
             'location':  cached.get('location') or main_article.get('location', 'Hyderabad'),
         }
@@ -513,6 +527,89 @@ def download_docx(idx: int):
     )
 
 
+@app.route('/api/articles/<int:idx>/image', methods=['POST'])
+def generate_ai_image(idx: int):
+    """
+    Generate an AI image for article[idx] using SD Turbo.
+    Result is cached; repeated calls return the same URL instantly.
+    Returns JSON: { status, image_url }
+    """
+    if idx < 0 or idx >= len(SCRAPED_ARTICLES):
+        return jsonify({'status': 'error', 'message': 'Article not found'}), 404
+
+    key = str(idx)
+    if key in AI_IMAGES:
+        return jsonify({'status': 'success', 'image_url': AI_IMAGES[key]})
+
+    article = SCRAPED_ARTICLES[idx]
+
+    try:
+        from src.image_generation.image_creator import (
+            build_image_prompt, build_negative_prompt,
+            generate_with_huggingface, generate_with_pollinations,
+            get_hf_token,
+        )
+        import hashlib
+
+        AI_IMAGES_STATIC_DIR.mkdir(parents=True, exist_ok=True)
+
+        prompt = build_image_prompt(article)
+        negative_prompt = build_negative_prompt()
+
+        import urllib.parse, time as _time
+
+        image_bytes = None
+        public_image_url = None
+
+        token = get_hf_token()
+        if token:
+            image_bytes = generate_with_huggingface(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                width=512,
+                height=512,
+                num_inference_steps=4,
+                guidance_scale=0.0,
+            )
+
+        if not image_bytes:
+            # Build Pollinations URL before downloading — it's publicly accessible
+            seed = int(_time.time())
+            clean_prompt = prompt.split(', Canon EOS')[0] if ', Canon EOS' in prompt else prompt
+            encoded_prompt = urllib.parse.quote(clean_prompt)
+            public_image_url = (
+                f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+                f"?width=512&height=512&seed={seed}&nologo=true"
+            )
+            image_bytes = generate_with_pollinations(prompt=prompt, width=512, height=512)
+
+        if not image_bytes:
+            return jsonify({'status': 'error', 'message': 'All image sources failed'}), 500
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        title_hash = hashlib.md5(article.get('heading', '').encode()).hexdigest()[:8]
+        filename = f"sdturbo_{timestamp}_{title_hash}.png"
+        filepath = AI_IMAGES_STATIC_DIR / filename
+
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(image_bytes))
+            img.save(str(filepath), format='PNG')
+        except Exception:
+            filepath.write_bytes(image_bytes)
+
+        url = f"/static/ai_images/{filename}"
+        AI_IMAGES[key] = url
+        if public_image_url:
+            AI_IMAGE_PUBLIC[key] = public_image_url
+        return jsonify({'status': 'success', 'image_url': url})
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        app.logger.error('AI image generation error: %s\n%s', e, tb)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 def save_articles_to_json(articles):
     ensure_output_dir()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -535,8 +632,9 @@ def load_articles(articles_list):
 
 
 if __name__ == '__main__':
+    # Development only — production uses: gunicorn -c gunicorn.conf.py wsgi:app
     print("\n" + "="*60)
-    print("OSI News Automation - Results Viewer")
+    print("OSI News Automation - Results Viewer (dev mode)")
     print("="*60)
     print(f"\nProject root: {PROJECT_ROOT}")
     print(f"Output dir:   {OUTPUT_DIR}")

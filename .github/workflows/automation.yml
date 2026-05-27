@@ -70,7 +70,7 @@ jobs:
           HOCALWIRE_USER_SESSION_ID: ${{ secrets.HOCALWIRE_USER_SESSION_ID }}
           HOCALWIRE_EMAIL: ${{ secrets.HOCALWIRE_EMAIL }}
           HOCALWIRE_PASSWORD: ${{ secrets.HOCALWIRE_PASSWORD }}
-          ENABLE_HOCALWIRE_UPLOAD: "true"
+          ENABLE_HOCALWIRE_UPLOAD: "false"
 
           # Pipeline config
           ENABLE_IMAGE_GENERATION: "true"

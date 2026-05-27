@@ -442,6 +442,12 @@ def upload_to_hocalwire(
         location = article.get('location') or article.get('dateline', 'Hyderabad')
         category_id = os.getenv('HOCALWIRE_CATEGORY_ID', '770')
         category_name = 'General'
+
+    # Env var always wins — the hardcoded map uses category 770 (dev instance)
+    # but the live domain requires the value set in HOCALWIRE_CATEGORY_ID
+    env_category_id = os.getenv('HOCALWIRE_CATEGORY_ID', '').strip()
+    if env_category_id:
+        category_id = env_category_id
     
     # Clean up location format
     if location.isupper():

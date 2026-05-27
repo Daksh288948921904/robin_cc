@@ -96,19 +96,21 @@ DEFAULT_CATEGORY = ('770', 'General')
 
 
 def get_groq_client():
-    """Get Groq client for LLM extraction."""
+    """Get Groq client using key pool rotation."""
     if not GROQ_AVAILABLE:
         return None
-    
-    api_key = os.getenv('GROQ_API_KEY')
-    if not api_key:
-        return None
-    
-    try:
-        return Groq(api_key=api_key)
-    except Exception as e:
-        logger.error(f"Failed to initialize Groq client: {e}")
-        return None
+
+    # Try each key in the pool until one works
+    for i in range(1, 9):
+        key_name = 'GROQ_API_KEY' if i == 1 else f'GROQ_API_KEY_{i}'
+        api_key = os.getenv(key_name, '').strip()
+        if api_key:
+            try:
+                return Groq(api_key=api_key)
+            except Exception:
+                continue
+
+    return None
 
 
 def extract_location_from_content(article_content: str, article_heading: str) -> str:
@@ -153,12 +155,12 @@ Respond with ONLY the location name, nothing else."""
 
     try:
         response = client.chat.completions.create(
-            model=os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+            model='llama-3.1-8b-instant',  # Small/fast model — saves 70B tokens for content generation
             messages=[{
                 "role": "user",
                 "content": prompt
             }],
-            temperature=0.1,  # Low temperature for consistent extraction
+            temperature=0.1,
             max_tokens=50
         )
         

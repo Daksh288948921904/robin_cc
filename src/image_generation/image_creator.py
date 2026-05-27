@@ -2,9 +2,9 @@
 OSI News Automation System - Image Generator
 =============================================
 Generates AI images for articles using Hugging Face Inference API.
-Model: Stable Diffusion 3.5 Large (stabilityai/stable-diffusion-3.5-large)
+Model: Stable Diffusion Turbo (stabilityai/sd-turbo)
 
-API: https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-3.5-large
+API: https://router.huggingface.co/hf-inference/models/stabilityai/sd-turbo
 Auth: Authorization: Bearer <HF_ACCESS_TOKEN>
 """
 
@@ -31,9 +31,9 @@ load_dotenv()
 # CONFIGURATION
 # ===========================================
 
-# FLUX.1-schnell via HuggingFace Serverless Inference (free, no license required)
-HF_API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
-HF_MODEL_NAME = "black-forest-labs/FLUX.1-schnell"
+# SD Turbo via HuggingFace Serverless Inference (fast 4-step distilled model)
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/sd-turbo"
+HF_MODEL_NAME = "stabilityai/sd-turbo"
 
 
 def is_image_generation_enabled() -> bool:
@@ -317,9 +317,6 @@ def build_image_prompt(article: Dict) -> str:
                   f"{loc_scene}"
                   f"documentary photojournalism style, real-world scene")
 
-    # -------------------------------------------------------
-    # FLUX.1 photorealism suffix
-    # -------------------------------------------------------
     prompt += (
         ", Canon EOS 5D Mark IV DSLR photograph, 35mm lens, "
         "natural available lighting, photorealistic, "
@@ -350,24 +347,24 @@ def build_negative_prompt() -> str:
 def generate_with_huggingface(
     prompt: str,
     negative_prompt: str = "",
-    width: int = 1024,
-    height: int = 1024,
-    num_inference_steps: int = 30,
-    guidance_scale: float = 7.5,
+    width: int = 512,
+    height: int = 512,
+    num_inference_steps: int = 4,
+    guidance_scale: float = 0.0,
 ) -> Optional[bytes]:
     """
-    Call the HuggingFace router for Stable Diffusion 3.5 Large.
+    Call the HuggingFace router for SD Turbo.
 
-    Uses the OpenAI-compatible /v1/images/generations endpoint via
-    router.huggingface.co.  Returns raw PNG bytes.
+    SD Turbo is a distilled CFG-free model — uses 4 steps and guidance_scale=0.0.
+    Returns raw PNG bytes.
 
     Args:
         prompt: Positive text prompt.
-        negative_prompt: Negative text prompt (passed inside prompt as suffix).
-        width: Image width (recommended: 1024).
-        height: Image height (recommended: 1024).
-        num_inference_steps: Quality steps (30 is ideal for SD 3.5 Large).
-        guidance_scale: Prompt adherence strength (7-8 recommended).
+        negative_prompt: Negative text prompt.
+        width: Image width (512 optimal for SD Turbo).
+        height: Image height (512 optimal for SD Turbo).
+        num_inference_steps: 4 steps is ideal for SD Turbo.
+        guidance_scale: 0.0 — SD Turbo is CFG-free.
 
     Returns:
         Raw image bytes (PNG), or None if generation failed.
@@ -401,7 +398,7 @@ def generate_with_huggingface(
     }
 
     try:
-        logger.info(f"\U0001f5bc\ufe0f  Calling HuggingFace SD 3.5 Large via router ({width}x{height}, steps={num_inference_steps})...")
+        logger.info(f"\U0001f5bc\ufe0f  Calling HuggingFace SD Turbo via router ({width}x{height}, steps={num_inference_steps})...")
 
         response = requests.post(
             HF_API_URL,
@@ -420,7 +417,7 @@ def generate_with_huggingface(
         # Image models return raw PNG/JPEG bytes
         content_type = response.headers.get("Content-Type", "")
         if "image" in content_type or len(response.content) > 1000:
-            logger.success(f"\u2705 HuggingFace SD 3.5 image generated ({len(response.content) / 1024:.1f} KB)")
+            logger.success(f"\u2705 HuggingFace SD Turbo image generated ({len(response.content) / 1024:.1f} KB)")
             return response.content
 
         # Attempt JSON parse for error detail
@@ -451,32 +448,34 @@ def generate_article_image(
     output_dir: str = "output/images",
     width: int = None,
     height: int = None,
-    num_steps: int = 30,
-    guidance_scale: float = 7.5
+    num_steps: int = 4,
+    guidance_scale: float = 0.0,
+    force_generate: bool = False,
 ) -> Optional[str]:
     """
-    Generate an AI image for an article using HuggingFace SD 3.5 Large.
+    Generate an AI image for an article using SD Turbo via HuggingFace.
 
     Args:
         article: Article dictionary with heading and story.
         output_dir: Directory to save generated images.
-        width: Image width (default 1024).
-        height: Image height (default 1024).
-        num_steps: Inference steps (30 = good quality/speed balance).
-        guidance_scale: Prompt adherence (7.5 recommended).
+        width: Image width (default 512 for SD Turbo).
+        height: Image height (default 512 for SD Turbo).
+        num_steps: 4 steps is optimal for SD Turbo.
+        guidance_scale: 0.0 — SD Turbo is CFG-free.
+        force_generate: Skip the ENABLE_IMAGE_GENERATION check.
 
     Returns:
         Path to generated image file, or None if generation failed.
     """
-    if not is_image_generation_enabled():
+    if not force_generate and not is_image_generation_enabled():
         logger.debug("Image generation disabled, skipping")
         return None
 
-    # Dimensions — SD 3.5 works best at 1024x1024
+    # Dimensions — SD Turbo works best at 512x512
     if width is None:
-        width = int(os.getenv('IMAGE_WIDTH', 1024))
+        width = int(os.getenv('IMAGE_WIDTH', 512))
     if height is None:
-        height = int(os.getenv('IMAGE_HEIGHT', 1024))
+        height = int(os.getenv('IMAGE_HEIGHT', 512))
 
     # Snap to valid multiples of 8
     width = max(512, (width // 8) * 8)
@@ -545,21 +544,21 @@ def generate_article_image(
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         title_hash = hashlib.md5(article.get('heading', '').encode()).hexdigest()[:8]
-        filename = f"sd35_{timestamp}_{title_hash}.png"
+        filename = f"sdturbo_{timestamp}_{title_hash}.png"
         filepath = output_path / filename
 
         image.save(str(filepath), format="PNG")
-        logger.success(f"✅ SD 3.5 image saved: {filepath}")
+        logger.success(f"✅ SD Turbo image saved: {filepath}")
         return str(filepath)
 
     except Exception:
         # PIL unavailable — save raw bytes
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         title_hash = hashlib.md5(article.get('heading', '').encode()).hexdigest()[:8]
-        filename = f"sd35_{timestamp}_{title_hash}.png"
+        filename = f"sdturbo_{timestamp}_{title_hash}.png"
         filepath = output_path / filename
         filepath.write_bytes(image_bytes)
-        logger.success(f"✅ SD 3.5 image saved (raw): {filepath}")
+        logger.success(f"✅ SD Turbo image saved (raw): {filepath}")
         return str(filepath)
 
 
@@ -578,7 +577,7 @@ def generate_images_for_articles(
         paths.append(generate_article_image(article, output_dir))
 
     successful = sum(1 for p in paths if p is not None)
-    logger.info(f"Generated {successful}/{len(articles)} images via SD 3.5 Large")
+    logger.info(f"Generated {successful}/{len(articles)} images via SD Turbo")
     return paths
 
 
@@ -843,8 +842,8 @@ def get_unsplash_image(
 # ===========================================
 
 def initialize_sd_pipeline(*args, **kwargs) -> bool:
-    """Deprecated: SD 3.5 is now called via HuggingFace Inference API (no local init needed)."""
-    logger.info("Using HuggingFace Inference API for SD 3.5 Large — no local init required")
+    """Deprecated: SD Turbo is now called via HuggingFace Inference API (no local init needed)."""
+    logger.info("Using HuggingFace Inference API for SD Turbo — no local init required")
     return is_image_generation_enabled()
 
 
@@ -863,9 +862,9 @@ def get_device() -> str:
 # ===========================================
 
 def test_image_generator():
-    """Test HuggingFace SD 3.5 Large image generation."""
+    """Test HuggingFace SD Turbo image generation."""
     print("\n" + "="*60)
-    print("🧪 HuggingFace Stable Diffusion 3.5 Large Test")
+    print("🧪 HuggingFace SD Turbo Test")
     print("="*60)
 
     enabled = is_image_generation_enabled()
@@ -875,10 +874,6 @@ def test_image_generator():
     print(f"📌 HF token set: {'Yes (' + token[:15] + '...)' if token else 'No'}")
     print(f"📌 Model: {HF_MODEL_NAME}")
     print(f"📌 Endpoint: {HF_API_URL}")
-
-    if not enabled:
-        print("\n⚠️ Set ENABLE_IMAGE_GENERATION=true in .env to enable")
-        return None
 
     if not token:
         print("\n⚠️ Set HF_ACCESS_TOKEN in .env")
@@ -892,9 +887,9 @@ def test_image_generator():
     }
 
     print(f"\n📰 Test article: {test_article['heading']}")
-    print("\n🚀 Generating via SD 3.5 Large (may take 30-120s on cold start)...")
+    print("\n🚀 Generating via SD Turbo (4 steps, fast)...")
 
-    path = generate_article_image(test_article)
+    path = generate_article_image(test_article, force_generate=True)
 
     if path:
         print(f"\n✅ Image generated: {path}")

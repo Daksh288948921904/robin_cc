@@ -21,7 +21,7 @@ lxml_html_clean==0.4.4
 # ===========================================
 # NLP & ML
 # ===========================================
-transformers==4.36.0
+transformers>=4.41.0,<5.0.0
 sentence-transformers==3.0.1
 torch==2.1.2
 langdetect==1.0.9

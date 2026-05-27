@@ -113,3 +113,16 @@ config/production.env
 *credential*
 *token*
 .credentials/
+
+# AI-generated images (large, regenerated on demand)
+src/frontend/static/ai_images/*.png
+src/frontend/static/ai_images/*.jpg
+src/frontend/static/ai_images/*.jpeg
+src/frontend/static/ai_images/*.webp
+
+# Claude Code session settings
+.claude/
+
+# HuggingFace / sentence-transformers model cache
+.cache/huggingface/
+sentence_transformers/

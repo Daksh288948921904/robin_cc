@@ -132,32 +132,43 @@ def generate_summary(
 
     prompt = _build_prompt(main_article, coverage)
 
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a professional news editor. Write publication-ready journalism. "
-                        "Be precise, factual, and name sources explicitly. "
-                        "CRITICAL: Your entire output must be in English only — title, headings, and body. "
-                        "If source material is in another language, translate it first, then write in English. "
-                        "Output ONLY the article in the requested format — no preamble, no commentary."
-                    )
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.35,
-            max_tokens=1100,
-        )
+    system_msg = (
+        "You are a professional news editor. Write publication-ready journalism. "
+        "Be precise, factual, and name sources explicitly. "
+        "CRITICAL: Your entire output must be in English only — title, headings, and body. "
+        "If source material is in another language, translate it first, then write in English. "
+        "Output ONLY the article in the requested format — no preamble, no commentary."
+    )
 
-        raw_text = response.choices[0].message.content.strip()
-        return _parse_response(raw_text, main_article, coverage)
+    # Try primary model, then fall back to fast 8B model on rate limit
+    models_to_try = [model, "llama-3.1-8b-instant"]
+    last_exc = None
+    for attempt_model in models_to_try:
+        try:
+            response = client.chat.completions.create(
+                model=attempt_model,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.35,
+                max_tokens=1100,
+            )
+            if attempt_model != model:
+                logger.info(f"Used fallback model {attempt_model} (primary rate-limited)")
+            raw_text = response.choices[0].message.content.strip()
+            return _parse_response(raw_text, main_article, coverage)
+        except Exception as exc:
+            error_str = str(exc)
+            if 'rate_limit_exceeded' in error_str or '429' in error_str:
+                logger.warning(f"Model {attempt_model} rate-limited, trying next fallback...")
+                last_exc = exc
+                continue
+            logger.error("Groq API call failed: %s", exc)
+            raise
 
-    except Exception as exc:
-        logger.error("Groq API call failed: %s", exc)
-        raise
+    logger.error("All models rate-limited: %s", last_exc)
+    raise last_exc
 
 
 def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
@@ -178,6 +189,8 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
     body = raw
     for pat in (r"TITLE:[^\n]*\n?", r"BYLINE:[^\n]*\n?", r"LOCATION:[^\n]*\n?", r"CATEGORY:[^\n]*\n?", r"-{3,}\n?"):
         body = re.sub(pat, "", body)
+    # Strip any LLM-generated Sources block at the end
+    body = re.sub(r'\n*\*?\*?Sources?:?\*?\*?\s*\n[\s\S]*$', '', body, flags=re.IGNORECASE)
     body = body.strip()
 
     # Build deduplicated sources list from main + coverage ONLY
