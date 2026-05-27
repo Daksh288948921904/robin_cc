@@ -18,12 +18,12 @@ from src.frontend.app import app, load_articles, OUTPUT_DIR
 
 def _autoload():
     """Load articles from MongoDB first, fall back to local JSON files."""
-    # Try MongoDB first (works after Render restarts)
     try:
         from src.database.mongo_client import get_client
         db = get_client()
         if db._ensure_connected():
-            raw = list(db.articles.find({}, {"_id": 0}).sort("scraped_at", -1).limit(500))
+            # Limit to 150 to keep memory under control on free Render instance
+            raw = list(db.articles.find({}, {"_id": 0}).sort("scraped_at", -1).limit(150))
             if raw:
                 load_articles(raw)
                 print(f'[wsgi] Auto-loaded {len(raw)} articles from MongoDB')
@@ -31,7 +31,6 @@ def _autoload():
     except Exception as exc:
         print(f'[wsgi] MongoDB load failed: {exc}')
 
-    # Fall back to local JSON files (local dev)
     try:
         import json
         json_files = list(OUTPUT_DIR.glob('scraped_*.json'))
@@ -48,4 +47,15 @@ def _autoload():
         print(f'[wsgi] Auto-load failed (non-fatal): {exc}')
 
 
+def _prewarm_model():
+    """Load sentence-transformer model at startup so first request doesn't block."""
+    try:
+        from src.utils.similarity import _get_model
+        _get_model()
+        print('[wsgi] Sentence-transformer model pre-loaded')
+    except Exception as exc:
+        print(f'[wsgi] Model pre-warm failed (non-fatal): {exc}')
+
+
 _autoload()
+_prewarm_model()
