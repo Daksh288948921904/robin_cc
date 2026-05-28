@@ -184,32 +184,53 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
     """Parse LLM output into structured fields."""
     import re
 
-    title_match    = re.search(r"TITLE:\s*(.+)",    raw)
-    byline_match   = re.search(r"BYLINE:\s*(.+)",   raw)
-    location_match = re.search(r"LOCATION:\s*(.+)", raw)
-    category_match = re.search(r"CATEGORY:\s*(.+)", raw)
+    title_match    = re.search(r"TITLE\s*:\s*(.+)",    raw, re.IGNORECASE)
+    byline_match   = re.search(r"BYLINE\s*:\s*(.+)",   raw, re.IGNORECASE)
+    location_match = re.search(r"LOCATION\s*:\s*(.+)", raw, re.IGNORECASE)
+    category_match = re.search(r"CATEGORY\s*:\s*(.+)", raw, re.IGNORECASE)
 
-    title    = title_match.group(1).strip()    if title_match    else "Robin CC Briefing"
+    def _clean_title(t: str) -> str:
+        """Strip markdown bold, angle-bracket placeholders, and stray punctuation."""
+        t = re.sub(r"\*{1,2}|\_{1,2}", "", t)     # **bold** or __bold__
+        t = re.sub(r"<[^>]+>", "", t)              # <template placeholders>
+        t = t.strip(' "\'.,—–-')
+        return t
 
-    # Safety net: if the generated title is too similar to the source headline, derive one
-    # from the first section heading + subject rather than copying the source.
+    if title_match:
+        title = _clean_title(title_match.group(1))
+    else:
+        # Fallback 1: first line of the raw response that looks like a headline
+        for line in raw.splitlines():
+            line = line.strip()
+            if line and not line.startswith(("BYLINE", "LOCATION", "CATEGORY", "##", "---", "━")):
+                title = _clean_title(line)
+                if len(title.split()) >= 4:
+                    break
+        else:
+            # Fallback 2: derive from first ## section heading
+            sec_match = re.search(r"^##\s+(.+)$", raw, re.MULTILINE)
+            title = sec_match.group(1).strip() if sec_match else (main_article.get("heading") or "News Briefing")
+
+    # Safety net: if the generated title is still too similar to the source headline,
+    # reframe it using the first section heading as a different angle.
     source_heading = (main_article.get("heading") or "").strip()
-    if source_heading:
+    if source_heading and title:
         gen_words = set(title.lower().split())
         src_words = set(source_heading.lower().split())
         overlap = len(gen_words & src_words) / max(len(src_words), 1)
         if overlap >= 0.65:
-            # Pull first ## section heading from body as a seed for a different angle
             sec_match = re.search(r"^##\s+(.+)$", raw, re.MULTILINE)
             if sec_match:
                 section_label = sec_match.group(1).strip()
-                # Get main subject (first 3 words of source heading)
-                subject = " ".join(source_heading.split()[:3])
-                title = f"{section_label}: What It Means for {subject}"
+                subject = " ".join(source_heading.split()[:4])
+                title = f"{section_label}: {subject}"
             else:
-                # Last resort: use first sentence of body as headline seed
                 first_sent = re.split(r'(?<=[.!?])\s', raw.lstrip(), maxsplit=1)
-                title = first_sent[0][:80].rstrip('.') if first_sent else title
+                if first_sent and len(first_sent[0].split()) >= 4:
+                    title = first_sent[0][:90].rstrip('.')
+
+    logger.info("Parsed title: %s", title)
+
     byline   = byline_match.group(1).strip()   if byline_match   else f"robin cc | {datetime.utcnow().strftime('%B %d, %Y')}"
     location = location_match.group(1).strip() if location_match else (main_article.get("region") or "")
     category = category_match.group(1).strip() if category_match else "World"
