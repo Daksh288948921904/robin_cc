@@ -12,11 +12,37 @@ The output is a channel-ready article that:
 """
 
 import os
+import random
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+_MALE_FIRST = [
+    "Aarav", "Arjun", "Rohan", "Vikram", "Karan", "Nikhil", "Siddharth",
+    "Rahul", "Amit", "Aditya", "Varun", "Yash", "Pranav", "Shivam", "Dev",
+    "Akash", "Harsh", "Manish", "Rajesh", "Sandeep", "Deepak", "Gaurav",
+    "Ishaan", "Kabir", "Lakshay", "Mayank", "Neeraj", "Om", "Parth", "Rishi",
+]
+_FEMALE_FIRST = [
+    "Aanya", "Priya", "Sneha", "Ananya", "Kavya", "Neha", "Pooja", "Riya",
+    "Sanya", "Tanvi", "Aditi", "Bhavna", "Divya", "Esha", "Gauri", "Isha",
+    "Jyoti", "Kritika", "Lavanya", "Meera", "Nisha", "Pallavi", "Radhika",
+    "Shruti", "Tanya", "Urvashi", "Vidya", "Yamini", "Zara", "Simran",
+]
+_LAST = [
+    "Sharma", "Verma", "Singh", "Gupta", "Patel", "Joshi", "Mehta", "Nair",
+    "Iyer", "Reddy", "Rao", "Pillai", "Mishra", "Pandey", "Tiwari", "Kumar",
+    "Agarwal", "Shah", "Bose", "Chatterjee", "Mukherjee", "Kapoor", "Malhotra",
+    "Khanna", "Sinha", "Trivedi", "Desai", "Deshpande", "Kulkarni", "Bhatt",
+]
+
+
+def _random_indian_name() -> str:
+    """Return a random Indian full name (male or female)."""
+    pool = _MALE_FIRST if random.random() < 0.5 else _FEMALE_FIRST
+    return f"{random.choice(pool)} {random.choice(_LAST)}"
 
 
 def _get_groq_client():
@@ -301,5 +327,6 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
         "body":         body,
         "raw_text":     raw,
         "sources_list": sources_list,
+        "reporter":     _random_indian_name(),
         "generated_at": datetime.utcnow().isoformat(),
     }

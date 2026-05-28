@@ -636,6 +636,7 @@ async function generateSummary(realIdx) {
         </div>
         <div class="sum-divider"></div>
         <div class="sum-body">${bodyHtml}</div>
+        ${s.reporter ? `<div class="sum-reporter">Reported by <strong>${esc(s.reporter)}</strong></div>` : ''}
         <div class="sum-sources-block">
           <div class="sum-sources-title">Sources</div>
           <ol class="sum-src-list">${srcsHtml}</ol>
