@@ -18,7 +18,9 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
 # Add project root to path for imports
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from flask import Flask, render_template, jsonify, request, send_file
+from flask import Flask, render_template, jsonify, request, send_file, session, redirect, url_for
+from werkzeug.security import check_password_hash
+from functools import wraps
 from dotenv import load_dotenv
 import logging
 import io
@@ -32,6 +34,26 @@ app = Flask(__name__,
 
 # ── Secret key (required for session security in production) ────
 app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(32)
+
+# ── Hardcoded auth credentials (exactly 2 users allowed) ────────
+_USERS = {
+    'RohitGandhi@Rig.robin-cc': (
+        'scrypt:32768:8:1$R9ZVhb3irCsQq74G$003a2b39a872aa590ac2874da55f2f6589ede9a7'
+        'ddfb114b768271ba181c815de7875742a8b85030cf8ea8dc046f30b65bb23355df1738a81bed314b76b73ea0'
+    ),
+    'SudiptaJana@Rig.robin-cc': (
+        'scrypt:32768:8:1$yhlU1DWKCMTbA3ss$3263bdae3bb4baef8b345f0a63b0f1ba45be85c2756546b7295c8bd8473810c1'
+        'a674731537da9787dabcfad8e8f4f25e24a4418fecc4e8fb66412a20ce12f748'
+    ),
+}
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('authenticated'):
+            return redirect(url_for('login', next=request.path))
+        return f(*args, **kwargs)
+    return decorated
 
 # ── Logging — level driven by LOG_LEVEL env var ─────────────────
 _log_level = getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO)
@@ -57,6 +79,28 @@ def server_error(e):
     app.logger.error('500 Internal Server Error: %s\n%s', request.path, traceback.format_exc())
     return jsonify({'status': 'error', 'message': str(e)}), 500
 
+# ── Auth routes ────────────────────────────────────────────────
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        pw_hash = _USERS.get(username)
+        if pw_hash and check_password_hash(pw_hash, password):
+            session['authenticated'] = True
+            next_url = request.args.get('next') or '/'
+            return redirect(next_url)
+        error = 'Invalid username or password.'
+    return render_template('login.html', error=error)
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
 # ── Shared state ───────────────────────────────────────────────
 SCRAPED_ARTICLES = []
 OUTPUT_DIR = PROJECT_ROOT / 'output' / 'json'
@@ -68,6 +112,7 @@ TIMELINES:  dict = {}   # index → list of {time, event} dicts
 SOCIALS:    dict = {}   # index → {twitter: {...}, instagram: {...}}
 AI_IMAGES:       dict = {}   # index → /static/ai_images/<filename> URL (local)
 AI_IMAGE_PUBLIC: dict = {}  # index → publicly accessible image URL (Pollinations or HF)
+ACTIVITY:        dict = {}  # index → {headline, source_name, published_hocalwire, published_at, video_sent, video_sent_at}
 
 # Static directory where AI-generated images are saved and served
 AI_IMAGES_STATIC_DIR = Path(__file__).parent / 'static' / 'ai_images'
@@ -137,6 +182,7 @@ def _run_scrape(max_articles: int):
 
 # ── Routes ─────────────────────────────────────────────────────
 @app.route('/')
+@login_required
 def index():
     return render_template('index.html',
                            article_count=len(SCRAPED_ARTICLES),
@@ -144,6 +190,7 @@ def index():
 
 
 @app.route('/api/articles')
+@login_required
 def get_articles():
     return jsonify({
         'status': 'success',
@@ -153,6 +200,7 @@ def get_articles():
 
 
 @app.route('/api/articles/<int:index>')
+@login_required
 def get_article(index):
     if 0 <= index < len(SCRAPED_ARTICLES):
         return jsonify({'status': 'success', 'article': SCRAPED_ARTICLES[index]})
@@ -160,6 +208,7 @@ def get_article(index):
 
 
 @app.route('/api/scrape', methods=['POST'])
+@login_required
 def trigger_scrape():
     """Start scraping in a background thread and return immediately."""
     global _scrape_state
@@ -193,6 +242,7 @@ def trigger_scrape():
 
 
 @app.route('/api/scrape/status')
+@login_required
 def scrape_status():
     """Poll this endpoint to check if background scraping is done."""
     with _scrape_lock:
@@ -215,6 +265,7 @@ def scrape_status():
 
 
 @app.route('/api/save', methods=['POST'])
+@login_required
 def save_to_json_route():
     if not SCRAPED_ARTICLES:
         return jsonify({'status': 'error', 'message': 'No articles to save'}), 400
@@ -227,6 +278,7 @@ def save_to_json_route():
 
 
 @app.route('/api/load', methods=['POST'])
+@login_required
 def load_from_json():
     global SCRAPED_ARTICLES, COVERAGES, SUMMARIES, TIMELINES, SOCIALS, AI_IMAGES, AI_IMAGE_PUBLIC
     COVERAGES.clear()
@@ -265,6 +317,7 @@ def load_from_json():
 
 
 @app.route('/api/articles/<int:idx>/coverage')
+@login_required
 def get_coverage(idx: int):
     """
     Return articles from OTHER sources that cover the same story as article[idx].
@@ -294,6 +347,7 @@ def get_coverage(idx: int):
 
 
 @app.route('/api/articles/<int:idx>/summary', methods=['POST'])
+@login_required
 def generate_summary(idx: int):
     """
     Generate a publishable multi-source article synthesising the main article
@@ -335,6 +389,7 @@ def generate_summary(idx: int):
 
 
 @app.route('/api/articles/<int:idx>/timeline', methods=['POST'])
+@login_required
 def generate_timeline_route(idx: int):
     """
     Generate a chronological event timeline for article[idx].
@@ -377,6 +432,7 @@ def generate_timeline_route(idx: int):
 
 
 @app.route('/api/articles/<int:idx>/social', methods=['POST'])
+@login_required
 def generate_social(idx: int):
     """
     Scrape Twitter and Instagram for reactions to article[idx]'s headline,
@@ -414,6 +470,7 @@ def generate_social(idx: int):
 
 
 @app.route('/api/articles/<int:idx>/publish', methods=['POST'])
+@login_required
 def publish_to_hocalwire(idx: int):
     """
     Publish the AI-synthesised summary for article[idx] to Hocalwire CMS.
@@ -446,7 +503,7 @@ def publish_to_hocalwire(idx: int):
         article_payload = {
             'heading':   title,
             'story':     body,
-            'image_url': AI_IMAGE_PUBLIC.get(key) or main_article.get('top_image') or main_article.get('image_url', ''),
+            'image_url': AI_IMAGE_PUBLIC.get(key) or main_article.get('image_url', '') or main_article.get('top_image', ''),
             'language':  'en',
             'location':  cached.get('location') or main_article.get('location', 'Hyderabad'),
         }
@@ -454,6 +511,7 @@ def publish_to_hocalwire(idx: int):
         success = upload_to_hocalwire(article_payload)
         if success:
             feed_id = article_payload.get('hocalwire_feed_id', '')
+            _record_activity(key, main_article, published_hocalwire=True)
             return jsonify({
                 'status':  'success',
                 'message': 'Published to Hocalwire successfully.',
@@ -472,6 +530,7 @@ def publish_to_hocalwire(idx: int):
 
 
 @app.route('/api/articles/<int:idx>/download', methods=['POST'])
+@login_required
 def download_docx(idx: int):
     """
     Download the multi-source summary for article[idx] as a .docx file.
@@ -528,6 +587,7 @@ def download_docx(idx: int):
 
 
 @app.route('/api/articles/<int:idx>/image', methods=['POST'])
+@login_required
 def generate_ai_image(idx: int):
     """
     Generate an AI image for article[idx] using SD Turbo.
@@ -608,6 +668,121 @@ def generate_ai_image(idx: int):
         tb = traceback.format_exc()
         app.logger.error('AI image generation error: %s\n%s', e, tb)
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/articles/<int:idx>/video', methods=['POST'])
+@login_required
+def trigger_video_workflow(idx: int):
+    """
+    Push article (+ cached summary if available) to an external video-generation
+    workflow via a user-supplied or env-configured webhook URL.
+
+    Body (JSON, all optional):
+      { "webhook_url": "https://..." }   # overrides VIDEO_WEBHOOK_URL env var
+    """
+    import urllib.request
+
+    if idx < 0 or idx >= len(SCRAPED_ARTICLES):
+        return jsonify({'status': 'error', 'message': 'Article not found'}), 404
+
+    body_json   = request.get_json(silent=True) or {}
+    webhook_url = (
+        body_json.get('webhook_url')
+        or os.environ.get('VIDEO_WEBHOOK_URL', '').strip()
+    )
+
+    if not webhook_url:
+        return jsonify({
+            'status': 'error',
+            'message': 'No webhook URL configured. Set VIDEO_WEBHOOK_URL in .env or pass webhook_url in the request body.'
+        }), 400
+
+    key         = str(idx)
+    article     = SCRAPED_ARTICLES[idx]
+    summary     = SUMMARIES.get(key)
+    coverage    = COVERAGES.get(key, [])
+    image_url   = AI_IMAGE_PUBLIC.get(key) or AI_IMAGES.get(key) or article.get('image_url', '')
+
+    payload = {
+        'article':   article,
+        'summary':   summary,
+        'coverage':  coverage,
+        'image_url': image_url,
+        'source':    'robin-cc',
+    }
+
+    import json as _json
+    payload_bytes = _json.dumps(payload, ensure_ascii=False, default=str).encode('utf-8')
+
+    try:
+        req = urllib.request.Request(
+            webhook_url,
+            data=payload_bytes,
+            headers={'Content-Type': 'application/json', 'User-Agent': 'robin-cc/1.0'},
+            method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            status_code = resp.getcode()
+    except Exception as e:
+        tb = traceback.format_exc()
+        app.logger.error('Video workflow webhook error: %s\n%s', e, tb)
+        return jsonify({'status': 'error', 'message': str(e)}), 502
+
+    if 200 <= status_code < 300:
+        _record_activity(key, article, video_sent=True)
+        return jsonify({'status': 'success', 'message': f'Sent to video workflow (HTTP {status_code})'})
+
+    return jsonify({
+        'status': 'error',
+        'message': f'Webhook returned HTTP {status_code}'
+    }), 502
+
+
+def _record_activity(key: str, article: dict, *, published_hocalwire=False, video_sent=False):
+    """Upsert an activity entry for the given article index key."""
+    entry = ACTIVITY.setdefault(key, {
+        'headline':            article.get('heading', 'Untitled'),
+        'source_name':         article.get('source_name', ''),
+        'published_hocalwire': False,
+        'published_at':        None,
+        'video_sent':          False,
+        'video_sent_at':       None,
+    })
+    now = datetime.now().isoformat()
+    if published_hocalwire:
+        entry['published_hocalwire'] = True
+        entry['published_at']        = now
+    if video_sent:
+        entry['video_sent']    = True
+        entry['video_sent_at'] = now
+
+
+@app.route('/api/activity')
+@login_required
+def get_activity():
+    """Return all articles that have been published or video-sent."""
+    items = [
+        {'idx': k, **v}
+        for k, v in ACTIVITY.items()
+        if v.get('published_hocalwire') or v.get('video_sent')
+    ]
+    items.sort(key=lambda x: x.get('published_at') or x.get('video_sent_at') or '', reverse=True)
+    return jsonify({'status': 'success', 'count': len(items), 'activity': items})
+
+
+@app.route('/api/articles/<int:idx>/status')
+@login_required
+def get_article_status(idx: int):
+    """Return publish/video status for a single article."""
+    key   = str(idx)
+    entry = ACTIVITY.get(key, {})
+    return jsonify({
+        'status':              'success',
+        'published_hocalwire': entry.get('published_hocalwire', False),
+        'video_sent':          entry.get('video_sent', False),
+        'published_at':        entry.get('published_at'),
+        'video_sent_at':       entry.get('video_sent_at'),
+    })
 
 
 def save_articles_to_json(articles):

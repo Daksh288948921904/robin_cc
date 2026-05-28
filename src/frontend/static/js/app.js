@@ -17,6 +17,8 @@ let CURRENT_REAL_IDX = -1;   // real index in ALL for API calls
 let EDIT_MODE        = false; // briefing edit toggle
 let TW_EDIT_MODE     = false; // twitter social edit toggle
 let IG_EDIT_MODE     = false; // instagram social edit toggle
+let ACTIVITY_MAP     = {};    // realIdx → {published_hocalwire, video_sent, headline, source_name, last_at}
+let FEED_VISIBLE     = true;  // false when activity view is shown
 
 // ── DOM ──────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -358,6 +360,10 @@ function openReader(i) {
   // Find the real index in SCRAPED_ARTICLES (ALL) for API calls
   const realIdx = ALL.indexOf(a);
   CURRENT_REAL_IDX = realIdx;
+
+  // Show persistent published alert if this article was already pushed
+  updatePublishedAlert(realIdx);
+
   if (realIdx >= 0) {
     loadCoverage(realIdx);
     loadAIImage(realIdx);
@@ -365,6 +371,31 @@ function openReader(i) {
     $('coverage-section').innerHTML = coverageEmptyHTML('Could not map to source index.');
     const s = $('r-ai-status'); if (s) s.remove();
   }
+}
+
+function updatePublishedAlert(realIdx) {
+  const alertEl  = $('published-alert');
+  const tagsEl   = $('pa-tags');
+  const textEl   = $('published-alert-text');
+  if (!alertEl) return;
+
+  const entry = realIdx >= 0 ? ACTIVITY_MAP[realIdx] : null;
+  if (!entry || (!entry.published_hocalwire && !entry.video_sent)) {
+    alertEl.classList.add('hidden');
+    return;
+  }
+
+  const parts = [];
+  if (entry.published_hocalwire) parts.push('Hocalwire');
+  if (entry.video_sent)          parts.push('Video Workflow');
+  textEl.textContent = `Already pushed to: ${parts.join(' & ')}`;
+
+  tagsEl.innerHTML = [
+    entry.published_hocalwire ? `<span class="pa-tag hocalwire">Hocalwire</span>` : '',
+    entry.video_sent          ? `<span class="pa-tag video">Video</span>` : '',
+  ].join('');
+
+  alertEl.classList.remove('hidden');
 }
 
 // ── Coverage panel ───────────────────────────────────────────
@@ -690,6 +721,10 @@ async function publishToHocalwire() {
       spinner.classList.add('hidden');
       const feedNote = data.feed_id ? ` · Feed ID: ${data.feed_id}` : '';
       toast('ok', `Published to Hocalwire${feedNote}`);
+      // Track locally and refresh alert
+      recordActivity(realIdx, {published_hocalwire: true});
+      updatePublishedAlert(realIdx);
+      refreshActivityCount();
     } else {
       pb.disabled = false;
       label.textContent = 'Publish to Hocalwire';
@@ -701,6 +736,82 @@ async function publishToHocalwire() {
     label.textContent = 'Publish to Hocalwire';
     spinner.classList.add('hidden');
     toast('err', `Publish error: ${e.message}`);
+  }
+}
+
+// ── Video workflow ────────────────────────────────────────────
+function openVideoModal() {
+  const overlay = $('video-modal-overlay');
+  overlay.classList.add('open');
+  // Re-validate the send button in case URL was previously set
+  const input = $('video-endpoint');
+  validateVideoEndpoint(input.value.trim());
+}
+
+function closeVideoModal(e) {
+  if (e && e.target !== $('video-modal-overlay')) return;
+  $('video-modal-overlay').classList.remove('open');
+}
+
+function validateVideoEndpoint(url) {
+  const sendBtn = $('vmodal-send-btn');
+  const banner  = $('vmodal-coming-banner');
+  const valid   = url.startsWith('http://') || url.startsWith('https://');
+  sendBtn.disabled = !valid;
+  banner.classList.toggle('hidden', valid);
+}
+
+// Wire up live validation as user types
+document.addEventListener('DOMContentLoaded', () => {
+  const input = $('video-endpoint');
+  if (input) {
+    input.addEventListener('input', () => validateVideoEndpoint(input.value.trim()));
+    // Close on Escape
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') $('video-modal-overlay').classList.remove('open');
+    });
+  }
+});
+
+async function sendVideoWorkflow() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) { toast('err', 'No article selected'); return; }
+
+  const webhookUrl = $('video-endpoint').value.trim();
+  if (!webhookUrl) { toast('err', 'Enter a webhook URL first'); return; }
+
+  const sendBtn = $('vmodal-send-btn');
+  const label   = $('vmodal-send-label');
+  const spinner = $('vmodal-spinner');
+
+  sendBtn.disabled = true;
+  label.textContent = 'Sending…';
+  spinner.classList.remove('hidden');
+
+  try {
+    const res  = await fetch(`/api/articles/${realIdx}/video`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify({ webhook_url: webhookUrl }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.status === 'success') {
+      toast('ok', 'Article sent to video workflow');
+      $('video-modal-overlay').classList.remove('open');
+      // Track locally and refresh alert
+      recordActivity(realIdx, {video_sent: true});
+      updatePublishedAlert(realIdx);
+      refreshActivityCount();
+    } else {
+      toast('err', data.message || 'Video workflow failed');
+    }
+  } catch(e) {
+    toast('err', `Network error: ${e.message}`);
+  } finally {
+    sendBtn.disabled = false;
+    label.textContent = 'Send to Workflow';
+    spinner.classList.add('hidden');
   }
 }
 
@@ -1116,6 +1227,101 @@ function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
   }
   tick();
   setInterval(tick, 1000);
+})();
+
+// ── Activity ──────────────────────────────────────────────────
+function recordActivity(realIdx, patch) {
+  if (realIdx < 0) return;
+  const a = ALL[realIdx];
+  const existing = ACTIVITY_MAP[realIdx] || {
+    headline:             a ? (a.heading || 'Untitled') : 'Unknown',
+    source_name:          a ? (a.source_name || '—')    : '—',
+    published_hocalwire:  false,
+    video_sent:           false,
+    last_at:              null,
+  };
+  ACTIVITY_MAP[realIdx] = Object.assign(existing, patch, { last_at: new Date().toISOString() });
+}
+
+function refreshActivityCount() {
+  const count = Object.keys(ACTIVITY_MAP).length;
+  const el = $('cnt-activity');
+  if (el) el.textContent = count;
+}
+
+function renderActivityView() {
+  const entries = Object.entries(ACTIVITY_MAP); // [[realIdx, data], ...]
+  const emptyEl = $('activity-empty');
+  const tableEl = $('activity-table');
+  const tbody   = $('activity-tbody');
+  if (!tbody) return;
+
+  if (entries.length === 0) {
+    emptyEl.style.display = '';
+    tableEl.classList.add('hidden');
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  tableEl.classList.remove('hidden');
+
+  // Sort by last_at descending
+  entries.sort((a, b) => (b[1].last_at || '').localeCompare(a[1].last_at || ''));
+
+  tbody.innerHTML = entries.map(([, d]) => {
+    const hocBadge   = d.published_hocalwire
+      ? `<span class="at-badge yes-hocalwire">Yes</span>`
+      : `<span class="at-badge no">—</span>`;
+    const vidBadge   = d.video_sent
+      ? `<span class="at-badge yes-video">Yes</span>`
+      : `<span class="at-badge no">—</span>`;
+    const timeStr    = d.last_at ? relTime(d.last_at) : '—';
+    return `<tr>
+      <td><div class="at-headline">${esc(d.headline)}</div></td>
+      <td><div class="at-source">${esc(d.source_name)}</div></td>
+      <td style="text-align:center">${hocBadge}</td>
+      <td style="text-align:center">${vidBadge}</td>
+      <td class="at-time">${timeStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Activity nav button
+(function wireActivityNav() {
+  const actBtn  = $('nav-activity-btn');
+  const feedArea = $('feed-area');
+  const actView  = $('activity-view');
+  if (!actBtn || !feedArea || !actView) return;
+
+  actBtn.addEventListener('click', () => {
+    const isActive = actBtn.classList.contains('active');
+    if (isActive) return; // already showing
+
+    // Deactivate all category nav buttons and activate activity btn
+    document.querySelectorAll('#nav-list .nav-btn').forEach(b => b.classList.remove('active'));
+    actBtn.classList.add('active');
+    FEED_VISIBLE = false;
+
+    // Hide feed panels, show activity
+    $('grid').classList.add('hidden');
+    $('list-view').classList.add('hidden');
+    $('skeleton').style.display = 'none';
+    $('empty').style.display    = 'none';
+    actView.classList.remove('hidden');
+    renderActivityView();
+
+    if (window.innerWidth <= 900) closeSidebar();
+  });
+
+  // When a Feed category nav button is clicked, switch back to feed
+  $('nav-list').addEventListener('click', () => {
+    if (!FEED_VISIBLE) {
+      FEED_VISIBLE = true;
+      actView.classList.add('hidden');
+      actBtn.classList.remove('active');
+      applyFilters();
+    }
+  });
 })();
 
 // ── Init ──────────────────────────────────────────────────────

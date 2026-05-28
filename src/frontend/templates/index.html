@@ -37,6 +37,20 @@
       </button>
     </div>
 
+    <div class="sidebar-section-label">Workspace</div>
+    <ul class="nav-list">
+      <li>
+        <button class="nav-btn" id="nav-activity-btn" data-view="activity">
+          <span class="nav-btn-icon">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="2.5" rx="1" fill="currentColor"/><rect x="1" y="5.5" width="8" height="2" rx="1" fill="currentColor"/><rect x="1" y="9.5" width="10" height="2" rx="1" fill="currentColor"/></svg>
+          </span>
+          Activity
+          <span class="nav-count" id="cnt-activity">0</span>
+        </button>
+      </li>
+    </ul>
+    <div class="sidebar-divider"></div>
+
     <div class="sidebar-section-label">Feed</div>
     <ul class="nav-list" id="nav-list">
       <li><button class="nav-btn active" data-cat="all"><span class="nav-btn-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="1" y="1" width="5" height="5" rx="1"/><rect x="8" y="1" width="5" height="5" rx="1"/><rect x="1" y="8" width="5" height="5" rx="1"/><rect x="8" y="8" width="5" height="5" rx="1"/></svg></span>All Stories<span class="nav-count" id="cnt-all">0</span></button></li>
@@ -156,6 +170,35 @@
       <div class="grid" id="grid"></div>
       <!-- List -->
       <div class="list-view hidden" id="list-view"></div>
+
+      <!-- Activity view -->
+      <div class="activity-view hidden" id="activity-view">
+        <div class="activity-header">
+          <div class="activity-title-row">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="3" rx="1.5" fill="currentColor" opacity=".9"/><rect x="1" y="6.5" width="9" height="2.5" rx="1" fill="currentColor" opacity=".6"/><rect x="1" y="11" width="11" height="2.5" rx="1" fill="currentColor" opacity=".6"/></svg>
+            <h2 class="activity-title">Activity Log</h2>
+          </div>
+          <p class="activity-sub">Stories you have pushed — Hocalwire publishes and video workflow sends.</p>
+        </div>
+        <div id="activity-table-wrap">
+          <div class="activity-empty" id="activity-empty">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" opacity=".3"><rect x="4" y="4" width="24" height="5" rx="2" fill="currentColor"/><rect x="4" y="13" width="16" height="4" rx="2" fill="currentColor"/><rect x="4" y="21" width="20" height="4" rx="2" fill="currentColor"/></svg>
+            <p>No activity yet — publish or send a story to see it here.</p>
+          </div>
+          <table class="activity-table hidden" id="activity-table">
+            <thead>
+              <tr>
+                <th class="at-col-headline">Headline</th>
+                <th class="at-col-source">Source</th>
+                <th class="at-col-status">Hocalwire</th>
+                <th class="at-col-status">Video</th>
+                <th class="at-col-time">Last action</th>
+              </tr>
+            </thead>
+            <tbody id="activity-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -178,6 +221,15 @@
 
     <div class="reader-scroll" id="reader-scroll">
       <div class="reader-progress-bar"><div class="reader-progress-fill" id="reader-prog"></div></div>
+
+      <!-- Published alert — shown persistently if story already pushed -->
+      <div class="published-alert hidden" id="published-alert">
+        <div class="pa-left">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/></svg>
+          <span id="published-alert-text">Already published to Hocalwire</span>
+        </div>
+        <div class="pa-tags" id="pa-tags"></div>
+      </div>
 
       <div class="reader-content">
         <div class="reader-cat-pill" id="r-cat"></div>
@@ -239,9 +291,60 @@
           <span id="publish-label">Publish to Hocalwire</span>
           <span class="publish-spinner hidden" id="publish-spinner"></span>
         </button>
+        <button class="video-btn" id="video-btn" onclick="openVideoModal()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          Video
+        </button>
         <button class="reader-json-btn" onclick="toggleRawJson()">{ } Raw JSON</button>
         <pre class="reader-raw hidden" id="reader-raw"></pre>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ░░ VIDEO MODAL ░░ -->
+<div class="vmodal-overlay" id="video-modal-overlay" onclick="closeVideoModal(event)">
+  <div class="vmodal" role="dialog" aria-modal="true" aria-labelledby="vmodal-title">
+    <div class="vmodal-header">
+      <div class="vmodal-title-row">
+        <div class="vmodal-icon">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        </div>
+        <h3 class="vmodal-title" id="vmodal-title">Video Workflow</h3>
+        <span class="vmodal-soon-badge">Coming Soon</span>
+      </div>
+      <button class="vmodal-close" onclick="closeVideoModal()" aria-label="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <div class="vmodal-body">
+      <p class="vmodal-desc">
+        Push the selected article to an external video-generation workflow via a webhook endpoint.
+        This integration is under active development — wire up your endpoint below to try it.
+      </p>
+
+      <div class="vmodal-field">
+        <label class="vmodal-label" for="video-endpoint">Webhook Endpoint URL</label>
+        <input class="vmodal-input" id="video-endpoint" type="url"
+               placeholder="https://your-workflow-endpoint/video"
+               spellcheck="false" autocomplete="off"/>
+        <span class="vmodal-hint">POST · receives article JSON + AI summary</span>
+      </div>
+
+      <div class="vmodal-coming-banner" id="vmodal-coming-banner">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Integration coming soon — add your endpoint URL above to enable
+      </div>
+    </div>
+
+    <div class="vmodal-footer">
+      <button class="vmodal-cancel-btn" onclick="closeVideoModal()">Cancel</button>
+      <button class="vmodal-send-btn" id="vmodal-send-btn" onclick="sendVideoWorkflow()" disabled>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        <span id="vmodal-send-label">Send to Workflow</span>
+        <span class="vmodal-spinner hidden" id="vmodal-spinner"></span>
+      </button>
     </div>
   </div>
 </div>

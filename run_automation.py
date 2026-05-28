@@ -542,6 +542,12 @@ def run_pipeline(dry_run: bool = False) -> dict:
                             article['image_path'] = image_path  # Keep local path for reference
                             stats['images_created'] += 1
                             logger.info(f"✅ Image uploaded: {public_url}")
+                            # Persist Cloudinary URL back to MongoDB so Render UI uses AI image
+                            if article.get('source_url'):
+                                db.articles.update_one(
+                                    {'source_url': article['source_url']},
+                                    {'$set': {'image_url': public_url}}
+                                )
                         else:
                             logger.warning(f"⚠️ Cloudinary upload failed, using fallback")
                             image_urls[i] = "https://www.hocalwire.com/images/logo.png"
