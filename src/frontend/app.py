@@ -37,13 +37,11 @@ app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(32)
 
 # ── Hardcoded auth credentials (exactly 2 users allowed) ────────
 _USERS = {
-    'RohitGandhi@Rig.robin-cc': (
-        'scrypt:32768:8:1$R9ZVhb3irCsQq74G$003a2b39a872aa590ac2874da55f2f6589ede9a7'
-        'ddfb114b768271ba181c815de7875742a8b85030cf8ea8dc046f30b65bb23355df1738a81bed314b76b73ea0'
+    'Rohit@Robin.cc': (
+        'scrypt:32768:8:1$h3hbtJrEc4fnIjeD$9b922665372248535fc502f66f587cedcfabd20b75d386b1f34453aba5280d08a146af93b1640b8f92c109f0be00299d3024b282189aefa10644b1d0740657ee'
     ),
-    'SudiptaJana@Rig.robin-cc': (
-        'scrypt:32768:8:1$yhlU1DWKCMTbA3ss$3263bdae3bb4baef8b345f0a63b0f1ba45be85c2756546b7295c8bd8473810c1'
-        'a674731537da9787dabcfad8e8f4f25e24a4418fecc4e8fb66412a20ce12f748'
+    'Sudipta@Robin.cc': (
+        'scrypt:32768:8:1$9BfAFr55acq3FBJE$4a0e5a6c8f7faf992a5ab6f3c01537ffcde0a83a9928fdb390c83eb33e9a21e828ccf54f312de0cedb392ff9cd07137e1305b97ab88f38e4473890db054c9f7f'
     ),
 }
 
