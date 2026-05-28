@@ -60,6 +60,10 @@ def _build_prompt(main_article: Dict, coverage: List[Dict]) -> str:
     today = datetime.utcnow().strftime("%B %d, %Y")
     n_sources = 1 + len(coverage)
 
+    # Collect every source headline so the model knows exactly what to avoid
+    all_source_headlines = [main_title] + [art.get("heading", "") for art in coverage if art.get("heading")]
+    forbidden_block = "\n".join(f'  ✗ "{h}"' for h in all_source_headlines)
+
     return f"""You are a senior news editor at robin cc, a global news channel.
 
 TASK: Write a comprehensive, publication-ready news article synthesising {n_sources} outlet(s) on the SAME story.
@@ -81,10 +85,14 @@ Headline: {main_title}
 7. Active voice. Clear paragraph breaks. Journalism style.
 8. Do NOT fabricate facts, quotes, or details not present above.
 9. Derive the most specific dateline location you can from the story content (city or country). If unclear, use the region.
-10. TITLE must be a FRESH, ORIGINAL headline you write yourself — it MUST NOT copy, repeat, or lightly rephrase any source headline above. Write a new angle, a stronger verb, or a more specific detail that the source headlines missed.
-11. Output format EXACTLY as shown below (## marks each section):
+10. Output format EXACTLY as shown below (## marks each section):
 
-TITLE: <original headline — 8–14 words, different from all source headlines>
+━━━ HEADLINE RULES (CRITICAL) ━━━
+These source headlines are BANNED — do not copy, paraphrase, or minimally rephrase them:
+{forbidden_block}
+Your TITLE must be a completely new headline: different words, different angle, stronger verb, or a more specific detail not in any headline above. Think: what is the most important CONSEQUENCE or IMPACT of this story?
+
+TITLE: <your ORIGINAL headline — 8–14 words, must differ from all banned headlines above>
 BYLINE: robin cc | {today}
 LOCATION: <CITY or COUNTRY where the story is happening>
 CATEGORY: <single category label — choose the single best fit from: World, Technology, Politics, Sports, Business, Entertainment, Science, Health, Environment, Crime, Society, Comedy>
@@ -181,7 +189,27 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
     location_match = re.search(r"LOCATION:\s*(.+)", raw)
     category_match = re.search(r"CATEGORY:\s*(.+)", raw)
 
-    title    = title_match.group(1).strip()    if title_match    else (main_article.get("heading") or "News Summary")
+    title    = title_match.group(1).strip()    if title_match    else "Robin CC Briefing"
+
+    # Safety net: if the generated title is too similar to the source headline, derive one
+    # from the first section heading + subject rather than copying the source.
+    source_heading = (main_article.get("heading") or "").strip()
+    if source_heading:
+        gen_words = set(title.lower().split())
+        src_words = set(source_heading.lower().split())
+        overlap = len(gen_words & src_words) / max(len(src_words), 1)
+        if overlap >= 0.65:
+            # Pull first ## section heading from body as a seed for a different angle
+            sec_match = re.search(r"^##\s+(.+)$", raw, re.MULTILINE)
+            if sec_match:
+                section_label = sec_match.group(1).strip()
+                # Get main subject (first 3 words of source heading)
+                subject = " ".join(source_heading.split()[:3])
+                title = f"{section_label}: What It Means for {subject}"
+            else:
+                # Last resort: use first sentence of body as headline seed
+                first_sent = re.split(r'(?<=[.!?])\s', raw.lstrip(), maxsplit=1)
+                title = first_sent[0][:80].rstrip('.') if first_sent else title
     byline   = byline_match.group(1).strip()   if byline_match   else f"robin cc | {datetime.utcnow().strftime('%B %d, %Y')}"
     location = location_match.group(1).strip() if location_match else (main_article.get("region") or "")
     category = category_match.group(1).strip() if category_match else "World"
