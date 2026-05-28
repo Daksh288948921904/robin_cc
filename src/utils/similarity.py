@@ -1,14 +1,11 @@
 """
 robin cc News — Article Similarity Search
 ==========================================
-Finds articles covering the same story across different sources
-using Sentence Transformers + cosine vector similarity (semantic search).
+Finds articles covering the same story across different sources.
 
-Model: all-MiniLM-L6-v2  (fast, ~80 MB, very accurate)
-       Switch to all-mpnet-base-v2 for higher accuracy at the cost of speed.
-
-No rule-based keyword matching — embeddings capture meaning even when
-wording differs between outlets covering the same event.
+Primary:  Sentence Transformers (all-MiniLM-L6-v2) — semantic / embedding search.
+Fallback: TF-IDF + cosine similarity (scikit-learn) — used when sentence-transformers
+          is not installed (e.g. Render free-tier UI server with OOM constraints).
 """
 
 import logging
@@ -18,34 +15,71 @@ from typing import Dict, List, Tuple
 logger = logging.getLogger(__name__)
 
 _MODEL_NAME = "all-MiniLM-L6-v2"
-_model = None   # loaded lazily on first call
-
-
-def _get_model():
-    """Load (or return cached) SentenceTransformer model."""
-    global _model
-    if _model is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-            logger.info("Loading sentence-transformer model: %s", _MODEL_NAME)
-            _model = SentenceTransformer(_MODEL_NAME)
-            logger.info("Sentence-transformer model loaded.")
-        except ImportError:
-            raise RuntimeError(
-                "sentence-transformers is not installed. "
-                "Run: pip install sentence-transformers"
-            )
-    return _model
+_model = None        # SentenceTransformer instance, or False if unavailable
+_USE_TFIDF = None    # resolved once on first call
 
 
 def _article_text(article: Dict) -> str:
-    """
-    Build a short text representation for embedding.
-    Title is repeated to give it more semantic weight.
-    """
     title   = (article.get("heading", "") or "").strip()
     summary = (article.get("story",   "") or "")[:300].strip()
     return f"{title}. {title}. {summary}".strip()
+
+
+def _resolve_backend():
+    global _model, _USE_TFIDF
+    if _USE_TFIDF is not None:
+        return
+    try:
+        from sentence_transformers import SentenceTransformer
+        logger.info("Loading sentence-transformer model: %s", _MODEL_NAME)
+        _model = SentenceTransformer(_MODEL_NAME)
+        _USE_TFIDF = False
+        logger.info("Sentence-transformer model loaded.")
+    except (ImportError, Exception) as e:
+        logger.warning("sentence-transformers unavailable (%s) — using TF-IDF fallback.", e)
+        _model = None
+        _USE_TFIDF = True
+
+
+def _find_similar_embeddings(target_text, candidate_texts, candidates, threshold, max_results):
+    all_texts  = [target_text] + candidate_texts
+    embeddings = _model.encode(
+        all_texts,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+        batch_size=64,
+    )
+    scores = np.dot(embeddings[1:], embeddings[0]).tolist()
+    scored = [
+        (art, round(score, 3))
+        for art, score in zip(candidates, scores)
+        if score >= threshold
+    ]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return scored[:max_results]
+
+
+def _find_similar_tfidf(target_text, candidate_texts, candidates, threshold, max_results):
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity as sk_cosine
+
+    all_texts = [target_text] + candidate_texts
+    try:
+        vec = TfidfVectorizer(stop_words='english', max_features=8000, sublinear_tf=True)
+        tfidf = vec.fit_transform(all_texts)
+    except ValueError:
+        return []
+
+    scores = sk_cosine(tfidf[0:1], tfidf[1:])[0].tolist()
+    # TF-IDF scores tend to be lower than embedding cosine; lower the threshold
+    adjusted = max(threshold * 0.5, 0.05)
+    scored = [
+        (art, round(score, 3))
+        for art, score in zip(candidates, scores)
+        if score >= adjusted
+    ]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return scored[:max_results]
 
 
 def find_similar(
@@ -55,27 +89,12 @@ def find_similar(
     max_results: int = 10,
 ) -> List[Tuple[Dict, float]]:
     """
-    Find articles in *all_articles* that cover the same story as *target*
-    using semantic embedding similarity (Sentence Transformers).
-
-    Rules:
-      - Must come from a different source_name.
-      - Cosine similarity must meet *threshold* (0.0–1.0; default 0.35).
-      - Returns up to *max_results*, sorted by similarity descending.
-
-    Args:
-        target:       The primary article to match against.
-        all_articles: Full article pool to search.
-        threshold:    Minimum cosine similarity to include a result.
-        max_results:  Maximum number of results to return.
-
-    Returns:
-        List of (article_dict, similarity_score) tuples.
+    Find articles from OTHER sources covering the same story as *target*.
+    Uses sentence-transformers if available, otherwise TF-IDF via scikit-learn.
     """
-    model      = _get_model()
-    target_src = (target.get("source_name") or "").strip().lower()
+    _resolve_backend()
 
-    # Filter to different-source candidates only
+    target_src = (target.get("source_name") or "").strip().lower()
     candidates = [
         art for art in all_articles
         if (art.get("source_name") or "").strip().lower() != target_src
@@ -83,29 +102,9 @@ def find_similar(
     if not candidates:
         return []
 
-    # Build texts and encode everything in one batch
     target_text     = _article_text(target)
     candidate_texts = [_article_text(a) for a in candidates]
 
-    all_texts  = [target_text] + candidate_texts
-    # normalize_embeddings=True → unit vectors → cosine sim = dot product
-    embeddings = model.encode(
-        all_texts,
-        normalize_embeddings=True,
-        show_progress_bar=False,
-        batch_size=64,
-    )
-
-    target_emb     = embeddings[0]
-    candidate_embs = embeddings[1:]
-
-    # Cosine similarities via vectorised dot product (fast)
-    scores = np.dot(candidate_embs, target_emb).tolist()
-
-    scored: List[Tuple[Dict, float]] = [
-        (art, round(score, 3))
-        for art, score in zip(candidates, scores)
-        if score >= threshold
-    ]
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return scored[:max_results]
+    if _USE_TFIDF:
+        return _find_similar_tfidf(target_text, candidate_texts, candidates, threshold, max_results)
+    return _find_similar_embeddings(target_text, candidate_texts, candidates, threshold, max_results)
