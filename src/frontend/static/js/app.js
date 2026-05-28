@@ -357,8 +357,8 @@ function openReader(i) {
   document.body.style.overflow='hidden';
   READER_OPEN = true;
 
-  // Find the real index in SCRAPED_ARTICLES (ALL) for API calls
-  const realIdx = ALL.indexOf(a);
+  // Use the stable server-side index stamped on load — never search via indexOf.
+  const realIdx = (a._serverIdx !== undefined) ? a._serverIdx : ALL.indexOf(a);
   CURRENT_REAL_IDX = realIdx;
 
   // Show persistent published alert if this article was already pushed
@@ -1123,7 +1123,10 @@ async function loadArticles() {
   try {
     const data = await fetch('/api/articles').then(r=>r.json());
     if (data.status==='success') {
-      ALL = data.articles||[];
+      // Stamp each article with its stable server-side index so openReader
+      // never has to search for it via indexOf (which can mis-map after a
+      // re-sort or concurrent load).
+      ALL = (data.articles||[]).map((a, i) => { a._serverIdx = i; return a; });
       refreshMeta(ALL);
       buildTicker(ALL);
       applyFilters();
