@@ -64,9 +64,9 @@ def _build_prompt(main_article: Dict, coverage: List[Dict]) -> str:
     all_source_headlines = [main_title] + [art.get("heading", "") for art in coverage if art.get("heading")]
     forbidden_block = "\n".join(f'  ✗ "{h}"' for h in all_source_headlines)
 
-    return f"""You are a senior news editor at robin cc, a global news channel.
+    return f"""You are a senior investigative news editor at robin cc, a global news channel with a reputation for deep, authoritative journalism.
 
-TASK: Write a comprehensive, publication-ready news article synthesising {n_sources} outlet(s) on the SAME story.
+TASK: Synthesise {n_sources} source(s) covering the SAME story into ONE original, publication-ready news article. Your article must read as if written by a single expert journalist who has digested every source and is now telling the definitive version of events.
 
 ━━━ PRIMARY SOURCE ({main_source}) ━━━
 Headline: {main_title}
@@ -75,41 +75,70 @@ Headline: {main_title}
 ━━━ ADDITIONAL COVERAGE ━━━
 {source_digest}
 
-━━━ WRITING RULES ━━━
-1. LANGUAGE: The entire output — TITLE, BYLINE, LOCATION, all headings, all body paragraphs — MUST be in English only. If any source content is in another language, translate it accurately first, then write the article in English. Never output a single word of any other language.
-2. Write 800-1000 words total, split across 6-7 thematic sections.
-3. Each section heading MUST be 2–3 words only — short, punchy, and derived from the story's own themes and key actors.
-4. Weave ALL source perspectives into ONE unified narrative voice. Do NOT name any outlet, newspaper, or broadcaster anywhere in the article body.
-5. Write all facts directly and authoritatively — no "according to", "reported by", or any source attribution in the text.
-6. All source credit goes ONLY in the structured Sources list at the end — never inline.
-7. Active voice. Clear paragraph breaks. Journalism style.
-8. Do NOT fabricate facts, quotes, or details not present above.
-9. Derive the most specific dateline location you can from the story content (city or country). If unclear, use the region.
-10. Output format EXACTLY as shown below (## marks each section):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ WRITING RULES (ALL MANDATORY) ━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+LANGUAGE & LENGTH
+• Every word of output — TITLE, SUBTITLE, BYLINE, LOCATION, all section headings, all body paragraphs — MUST be in English only. Translate any non-English source material accurately before writing.
+• Total body length: 800–1000 words minimum across 6–7 thematic sections. Do not pad; make every sentence earn its place.
+
+STRUCTURE & NARRATIVE
+• Open with a hard-hitting lede of 2–3 sentences: the single most important consequence or revelation first, not background.
+• Divide the body into 6–7 sections, each with a 3–5 word heading that names the theme, actor, or tension — not a generic label like "Background" or "Conclusion".
+• Do NOT write a conclusion section. The final section must advance the story — a forward-looking development, an unresolved tension, or the next expected move — written as narrative, not summary.
+• Each story must have a unique structure. Vary where you place the human element, the data, the quotes, and the stakes to fit this specific story. Never use a template structure.
+• Weave all source perspectives into ONE authoritative narrative voice. The reader must not sense multiple sources being stitched together.
+
+QUOTES (CRITICAL — 3 to 4 REQUIRED)
+• Extract 3–4 direct quotes verbatim from the source material above. Do NOT paraphrase into indirect speech; use the exact words in quotation marks.
+• Embed each quote naturally within the paragraph where it fits the theme — never drop a quote in isolation.
+• If a quote SUPPORTS the theme of that section, let it reinforce the narrative.
+• If a quote CONTRADICTS what officials or actors are doing on the ground, expose the contradiction explicitly in the surrounding prose: show what they said versus what they did. This tension is your strongest journalistic tool — use it.
+• Do NOT fabricate, invent, or approximate any quote. Only use quotes that appear verbatim in the sources above.
+
+ATTRIBUTION & FACTS
+• Write all facts directly and authoritatively — no "according to", "reported by", "sources say", or any similar hedge anywhere in the body.
+• Do NOT name any outlet, newspaper, broadcaster, or wire service inside the article body.
+• Do NOT fabricate any fact, statistic, name, date, or detail not explicitly present in the sources above.
+• All source credit goes solely in the Sources block after the article — never inline.
+
+STYLE
+• Active voice throughout. Cut all passive constructions unless essential.
+• Vary sentence length: mix short punchy sentences with longer analytical ones.
+• Journalism style: precise nouns, strong verbs, no filler adjectives.
+• No editorialising or opinion — present facts and let the quotes speak.
 
 ━━━ HEADLINE RULES (CRITICAL) ━━━
-These source headlines are BANNED — do not copy, paraphrase, or minimally rephrase them:
+These source headlines are BANNED — do not copy, paraphrase, or lightly rephrase any of them:
 {forbidden_block}
-Your TITLE must be a completely new headline: different words, different angle, stronger verb, or a more specific detail not in any headline above. Think: what is the most important CONSEQUENCE or IMPACT of this story?
+Your TITLE must be an entirely original headline: new angle, stronger verb, or the single most important CONSEQUENCE of the story that the source headlines missed. Ask yourself: what changes because of this story? Start there.
 
-TITLE: <your ORIGINAL headline — 8–14 words, must differ from all banned headlines above>
+━━━ OUTPUT FORMAT (follow exactly — do not add or remove any field) ━━━
+
+TITLE: <your ORIGINAL headline — 8–14 words, must differ from every banned headline above>
+SUBTITLE: <one sentence, max 140 characters, synthesising the story's core significance>
 BYLINE: robin cc | {today}
-LOCATION: <CITY or COUNTRY where the story is happening>
-CATEGORY: <single category label — choose the single best fit from: World, Technology, Politics, Sports, Business, Entertainment, Science, Health, Environment, Crime, Society, Comedy>
+LOCATION: <most specific city or country dateline you can derive from the content>
+CATEGORY: <single best-fit label — World / Technology / Politics / Sports / Business / Entertainment / Science / Health / Environment / Crime / Society / Comedy>
 ---
-<strong opening lede — 2–3 sentences, the single most important fact first>
+<lede — 2–3 sentences, most important fact first, no source names>
 
-## <2-3 word heading>
+## <3–5 word section heading>
 
-<2–3 paragraphs — core facts>
+<2–3 paragraphs of core facts; embed 1–2 quotes here if they fit>
 
-## <2-3 word heading>
+## <3–5 word section heading>
 
-<2–3 paragraphs — context, reactions, secondary angles>
+<2–3 paragraphs of context, key actors, escalation or reaction; embed quotes that support or contradict>
 
-## <2-3 word heading>
+## <3–5 word section heading>
 
-<1–2 paragraphs — implications or outlook>
+<2–3 paragraphs of secondary angles, human dimension, data>
+
+## <3–5 word section heading>
+
+<1–2 paragraphs of stakes, implications, or next expected development — written as narrative, not conclusion>
 
 Write the article now:
 """
@@ -142,11 +171,13 @@ def generate_summary(
     prompt = _build_prompt(main_article, coverage)
 
     system_msg = (
-        "You are a professional news editor. Write publication-ready journalism. "
-        "Be precise, factual, and name sources explicitly. "
-        "CRITICAL: Your entire output must be in English only — title, headings, and body. "
-        "If source material is in another language, translate it first, then write in English. "
-        "Output ONLY the article in the requested format — no preamble, no commentary."
+        "You are a senior investigative journalist and news editor at robin cc, a global news channel. "
+        "Your writing is authoritative, precise, and publication-ready — the standard of Reuters or AP but with narrative depth. "
+        "You synthesise multiple sources into a single definitive account, integrating real quotes to expose agreements and contradictions. "
+        "CRITICAL: Your entire output — every word — must be in English only. "
+        "Translate any non-English source material accurately before writing. "
+        "Output ONLY the formatted article. No preamble, no meta-commentary, no 'Here is the article' opener. "
+        "Follow the output format exactly. Never skip a field."
     )
 
     # Try primary model, then fall back to fast 8B model on rate limit
@@ -160,8 +191,8 @@ def generate_summary(
                     {"role": "system", "content": system_msg},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.35,
-                max_tokens=1100,
+                temperature=0.4,
+                max_tokens=2048,
             )
             if attempt_model != model:
                 logger.info(f"Used fallback model {attempt_model} (primary rate-limited)")
@@ -185,6 +216,7 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
     import re
 
     title_match    = re.search(r"TITLE\s*:\s*(.+)",    raw, re.IGNORECASE)
+    subtitle_match = re.search(r"SUBTITLE\s*:\s*(.+)", raw, re.IGNORECASE)
     byline_match   = re.search(r"BYLINE\s*:\s*(.+)",   raw, re.IGNORECASE)
     location_match = re.search(r"LOCATION\s*:\s*(.+)", raw, re.IGNORECASE)
     category_match = re.search(r"CATEGORY\s*:\s*(.+)", raw, re.IGNORECASE)
@@ -231,13 +263,15 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
 
     logger.info("Parsed title: %s", title)
 
+    subtitle = subtitle_match.group(1).strip() if subtitle_match else ""
+    subtitle = re.sub(r"<[^>]+>", "", subtitle).strip(' "\'')  # strip placeholders
     byline   = byline_match.group(1).strip()   if byline_match   else f"robin cc | {datetime.utcnow().strftime('%B %d, %Y')}"
     location = location_match.group(1).strip() if location_match else (main_article.get("region") or "")
     category = category_match.group(1).strip() if category_match else "World"
 
     # Strip header lines to get body
     body = raw
-    for pat in (r"TITLE:[^\n]*\n?", r"BYLINE:[^\n]*\n?", r"LOCATION:[^\n]*\n?", r"CATEGORY:[^\n]*\n?", r"-{3,}\n?"):
+    for pat in (r"TITLE:[^\n]*\n?", r"SUBTITLE:[^\n]*\n?", r"BYLINE:[^\n]*\n?", r"LOCATION:[^\n]*\n?", r"CATEGORY:[^\n]*\n?", r"-{3,}\n?"):
         body = re.sub(pat, "", body)
     # Strip any LLM-generated Sources block at the end
     body = re.sub(r'\n*\*?\*?Sources?:?\*?\*?\s*\n[\s\S]*$', '', body, flags=re.IGNORECASE)
@@ -260,6 +294,7 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
 
     return {
         "title":        title,
+        "subtitle":     subtitle,
         "byline":       byline,
         "location":     location,
         "category":     category,
