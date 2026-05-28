@@ -81,9 +81,10 @@ Headline: {main_title}
 7. Active voice. Clear paragraph breaks. Journalism style.
 8. Do NOT fabricate facts, quotes, or details not present above.
 9. Derive the most specific dateline location you can from the story content (city or country). If unclear, use the region.
-10. Output format EXACTLY as shown below (## marks each section):
+10. TITLE must be a FRESH, ORIGINAL headline you write yourself — it MUST NOT copy, repeat, or lightly rephrase any source headline above. Write a new angle, a stronger verb, or a more specific detail that the source headlines missed.
+11. Output format EXACTLY as shown below (## marks each section):
 
-TITLE: <compelling headline — 8–14 words>
+TITLE: <original headline — 8–14 words, different from all source headlines>
 BYLINE: robin cc | {today}
 LOCATION: <CITY or COUNTRY where the story is happening>
 CATEGORY: <single category label — choose the single best fit from: World, Technology, Politics, Sports, Business, Entertainment, Science, Health, Environment, Crime, Society, Comedy>
