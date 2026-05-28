@@ -9,6 +9,15 @@
 <link rel="stylesheet" href="/static/css/style.css"/>
 </head>
 <body>
+<script>
+  // Force re-login on every page refresh
+  (function () {
+    var nav = performance.getEntriesByType('navigation');
+    if (nav.length && nav[0].type === 'reload') {
+      window.location.href = '/logout';
+    }
+  })();
+</script>
 
 <!-- Ambient gradient backdrop -->
 <div class="ambient-bg" aria-hidden="true">
