@@ -118,7 +118,14 @@ STRICT RULES:
 5. Begin with: "A Reuters/AP news photograph of..." or "An AFP documentary photograph of..."
 6. Make it hyper-specific: a reader should immediately know which news event it depicts.
 7. Do NOT describe: text overlays, watermarks, logos, blank rooms, or abstract concepts.
-8. Close with: "photorealistic, Canon EOS 5D Mark IV, 85mm lens, natural available light, sharp focus, news agency quality"
+8. Close with: "photorealistic, Canon EOS 5D Mark IV, 35mm wide lens, natural available light, sharp focus, news agency quality"
+
+CRITICAL COMPOSITION RULES (follow strictly):
+- NEVER request a close-up or portrait shot of a face. Faces render poorly in AI image models.
+- Always use WIDE or MEDIUM shots: full body, waist-up, or environmental scene.
+- For people: show them from the SIDE, BACK, or at DISTANCE within their setting (e.g. "seen from behind at a podium", "walking through the courtroom", "standing at a distance before the judge's bench").
+- Prefer showing the ENVIRONMENT and CONTEXT over the person's face: courtroom interior, street scene, press conference hall, military camp, etc.
+- If the story has no named person, describe only the scene/location/event — no faces at all.
 """
 
 

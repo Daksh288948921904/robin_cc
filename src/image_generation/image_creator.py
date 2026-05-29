@@ -330,6 +330,9 @@ def build_image_prompt(article: Dict) -> str:
 def build_negative_prompt() -> str:
     """Strong negative prompt to prevent AI-looking, CGI, or generic imagery."""
     return (
+        "close-up face, portrait, face closeup, extreme closeup, headshot, "
+        "deformed face, distorted face, disfigured face, bad face, ugly face, "
+        "uncanny face, weird eyes, asymmetric face, extra limbs, mutated hands, "
         "CGI, 3D render, digital art, illustration, painting, cartoon, anime, "
         "sketch, watercolor, unrealistic, artificial lighting, studio lighting, "
         "text, watermark, signature, logo, "
