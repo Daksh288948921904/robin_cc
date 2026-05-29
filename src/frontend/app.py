@@ -487,10 +487,11 @@ def publish_to_hocalwire(idx: int):
 
     main_article = SCRAPED_ARTICLES[idx]
 
-    # Allow caller to pass edited title/body
+    # Allow caller to pass edited title/body and chosen image
     body_json = request.get_json(silent=True) or {}
-    title = body_json.get('edited_title') or cached.get('title') or main_article.get('heading', '')
-    body  = body_json.get('edited_body')  or cached.get('body', '')
+    title          = body_json.get('edited_title') or cached.get('title') or main_article.get('heading', '')
+    body           = body_json.get('edited_body')  or cached.get('body', '')
+    selected_image = body_json.get('selected_image')  # explicit picker choice from frontend
 
     if not title or not body:
         return jsonify({'status': 'error', 'message': 'Summary has no title or body'}), 400
@@ -498,10 +499,18 @@ def publish_to_hocalwire(idx: int):
     try:
         from src.api_integrations.hocalwire_uploader import upload_to_hocalwire
 
+        # Image priority: user's picker choice → AI-generated → scraped
+        image_url = (
+            selected_image
+            or AI_IMAGE_PUBLIC.get(key)
+            or main_article.get('image_url', '')
+            or main_article.get('top_image', '')
+        )
+
         article_payload = {
             'heading':   title,
             'story':     body,
-            'image_url': AI_IMAGE_PUBLIC.get(key) or main_article.get('image_url', '') or main_article.get('top_image', ''),
+            'image_url': image_url,
             'language':  'en',
             'location':  cached.get('location') or main_article.get('location', 'Hyderabad'),
         }

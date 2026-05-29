@@ -110,6 +110,27 @@ def _extract_image(entry) -> str:
         if m:
             return m.group(1)
 
+    # 6. Fetch the article page and read og:image / twitter:image meta tag
+    link = (entry.get("link") or "").strip()
+    if link:
+        try:
+            with httpx.Client(timeout=6, follow_redirects=True, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; OSI-NewsBot/2.0)",
+                "Accept": "text/html,*/*",
+            }) as client:
+                r = client.get(link)
+            for pattern in (
+                r'<meta\b[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']{12,})["\']',
+                r'<meta\b[^>]+content=["\']([^"\']{12,})["\'][^>]+property=["\']og:image["\']',
+                r'<meta\b[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']{12,})["\']',
+                r'<meta\b[^>]+content=["\']([^"\']{12,})["\'][^>]+name=["\']twitter:image["\']',
+            ):
+                m = _re.search(pattern, r.text, _re.I)
+                if m:
+                    return m.group(1)
+        except Exception:
+            pass
+
     return ""
 
 

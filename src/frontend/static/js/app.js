@@ -19,6 +19,7 @@ let TW_EDIT_MODE     = false; // twitter social edit toggle
 let IG_EDIT_MODE     = false; // instagram social edit toggle
 let ACTIVITY_MAP     = {};    // realIdx → {published_hocalwire, video_sent, headline, source_name, last_at}
 let FEED_VISIBLE     = true;  // false when activity view is shown
+let SELECTED_IMAGE   = null;  // URL chosen in the image picker (null = use article default)
 
 // ── DOM ──────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -327,6 +328,8 @@ function openReader(i) {
     a.source_url ? `<a href="${esc(a.source_url)}" target="_blank" rel="noopener">↗ Original source</a>` : '',
   ].filter(Boolean).join('<span style="color:var(--border-hi)">·</span>');
 
+  SELECTED_IMAGE = null;  // reset picker on new article open
+
   const img = a.top_image||a.image_url||'';
   $('r-image').innerHTML = `
     <div id="r-img-container" style="position:relative">
@@ -604,7 +607,7 @@ function collectEditedContent() {
   const catBtn  = document.querySelector('.sum-category-btn');
   const category = catBtn ? catBtn.textContent.trim() : (CURRENT_SUMM && CURRENT_SUMM.category) || 'World';
 
-  return { edited_title: title, edited_body: body.trim(), category };
+  return { edited_title: title, edited_body: body.trim(), category, selected_image: SELECTED_IMAGE || undefined };
 }
 
 async function generateSummary(realIdx) {
@@ -1030,6 +1033,16 @@ function toggleSocialEdit(platform) {
   else toast('ok', 'Edits saved');
 }
 
+// ── Image picker helper ──────────────────────────────────────
+function selectImage(url, type) {
+  SELECTED_IMAGE = url;
+  document.querySelectorAll('.img-pick-option').forEach(el => {
+    const isThis = el.dataset.type === type;
+    el.classList.toggle('img-pick-selected', isThis);
+    el.querySelector('.img-pick-radio').classList.toggle('img-pick-radio-on', isThis);
+  });
+}
+
 // ── AI Image loader ──────────────────────────────────────────
 async function loadAIImage(realIdx) {
   const myIdx = realIdx;
@@ -1037,7 +1050,6 @@ async function loadAIImage(realIdx) {
     const res  = await fetch(`/api/articles/${realIdx}/image`, {method: 'POST'});
     const data = await res.json();
 
-    // Guard: user may have navigated to a different article
     if (CURRENT_REAL_IDX !== myIdx) return;
 
     const statusEl = $('r-ai-status');
@@ -1047,32 +1059,51 @@ async function loadAIImage(realIdx) {
       const container = $('r-img-container');
       if (!container) return;
 
-      const aiWrap = document.createElement('div');
-      aiWrap.style.position = 'relative';
+      const scrapedImg = $('r-scraped-img');
+      const scrapedUrl = scrapedImg ? scrapedImg.src : '';
 
-      const aiImg = document.createElement('img');
-      aiImg.alt = '';
-      aiImg.style.cssText = 'width:100%;border-radius:12px;max-height:400px;object-fit:cover;opacity:0;transition:opacity .4s';
+      // Default selection: AI image
+      SELECTED_IMAGE = data.image_url;
 
-      const badge = document.createElement('span');
-      badge.textContent = 'AI · SD Turbo';
-      badge.style.cssText = 'position:absolute;top:10px;right:10px;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);color:#fff;font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;letter-spacing:.05em';
+      // Build picker
+      const picker = document.createElement('div');
+      picker.id = 'img-picker';
+      picker.className = 'img-picker';
 
-      aiImg.onload = () => {
-        const scraped = $('r-scraped-img');
-        if (scraped) scraped.style.display = 'none';
-        aiImg.style.opacity = '1';
-      };
-      aiImg.src = data.image_url;
+      const aiOpt = _makePickOption('ai', 'AI Generated', 'SD Turbo', data.image_url, true);
+      picker.appendChild(aiOpt);
 
-      aiWrap.appendChild(aiImg);
-      aiWrap.appendChild(badge);
-      container.insertBefore(aiWrap, container.firstChild);
+      if (scrapedUrl) {
+        const scrapedOpt = _makePickOption('original', 'Original Photo', 'Scraped', scrapedUrl, false);
+        picker.appendChild(scrapedOpt);
+      }
+
+      // Replace old image area with picker
+      if (scrapedImg) scrapedImg.remove();
+      container.insertBefore(picker, container.firstChild);
     }
   } catch(_e) {
     const statusEl = $('r-ai-status');
     if (statusEl) statusEl.remove();
   }
+}
+
+function _makePickOption(type, label, sublabel, imgUrl, selected) {
+  const opt = document.createElement('div');
+  opt.className = 'img-pick-option' + (selected ? ' img-pick-selected' : '');
+  opt.dataset.type = type;
+  opt.onclick = () => selectImage(imgUrl, type);
+  opt.innerHTML = `
+    <div class="img-pick-thumb-wrap">
+      <img class="img-pick-thumb" src="${esc(imgUrl)}" alt="" loading="lazy">
+      <span class="img-pick-badge">${esc(sublabel)}</span>
+    </div>
+    <div class="img-pick-footer">
+      <span class="img-pick-radio${selected ? ' img-pick-radio-on' : ''}"></span>
+      <span class="img-pick-label">${esc(label)}</span>
+      ${selected ? '<span class="img-pick-check">✓ Selected for publish</span>' : ''}
+    </div>`;
+  return opt;
 }
 
 function closeReader() {

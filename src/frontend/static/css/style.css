@@ -2089,3 +2089,71 @@ body::before {
   background: rgba(255,255,255,.04);
   border-color: rgba(255,255,255,.07);
 }
+
+
+/* ═══════════════════════════════════════════════
+   IMAGE PICKER
+═══════════════════════════════════════════════ */
+.img-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.img-pick-option {
+  border: 1.5px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color .18s, box-shadow .18s;
+  background: var(--bg2);
+}
+.img-pick-option:hover {
+  border-color: rgba(99,102,241,.35);
+}
+.img-pick-option.img-pick-selected {
+  border-color: rgba(99,102,241,.6);
+  box-shadow: 0 0 0 3px rgba(99,102,241,.14);
+}
+.img-pick-thumb-wrap {
+  position: relative;
+  aspect-ratio: 16/9;
+  overflow: hidden;
+  background: var(--bg3);
+}
+.img-pick-thumb {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .3s;
+}
+.img-pick-option:hover .img-pick-thumb { transform: scale(1.04); }
+.img-pick-badge {
+  position: absolute; top: 7px; right: 7px;
+  font-size: 9px; font-weight: 700; letter-spacing: .06em;
+  background: rgba(0,0,0,.68); backdrop-filter: blur(6px);
+  color: rgba(255,255,255,.85);
+  padding: 2px 7px; border-radius: 20px;
+}
+.img-pick-footer {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(255,255,255,.05);
+}
+.img-pick-radio {
+  width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+  border: 1.5px solid rgba(255,255,255,.2);
+  transition: border-color .15s, background .15s;
+}
+.img-pick-radio.img-pick-radio-on {
+  border-color: var(--accent-lt);
+  background: var(--accent-lt);
+  box-shadow: 0 0 6px rgba(129,140,248,.6);
+}
+.img-pick-label {
+  font-size: 11px; font-weight: 600; color: var(--ink2); flex: 1;
+}
+.img-pick-check {
+  font-size: 9.5px; font-weight: 700; color: var(--accent-lt);
+  white-space: nowrap; letter-spacing: .03em;
+}
