@@ -290,9 +290,13 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
     logger.info("Parsed title: %s", title)
 
     subtitle = subtitle_match.group(1).strip() if subtitle_match else ""
-    subtitle = re.sub(r"<[^>]+>", "", subtitle).strip(' "\'')  # strip placeholders
+    subtitle = re.sub(r"<[^>]+>", "", subtitle).strip(' "\'')
+    subtitle = re.sub(r"\*+", "", subtitle).strip()           # strip markdown bold/italic markers
+    if subtitle.upper() in ("SUB", "SUBTITLE", "NONE", "N/A", ""):
+        subtitle = ""
     byline   = byline_match.group(1).strip()   if byline_match   else f"robin cc | {datetime.utcnow().strftime('%B %d, %Y')}"
     location = location_match.group(1).strip() if location_match else (main_article.get("region") or "")
+    location = re.sub(r"\*+", "", location).strip()
     category = category_match.group(1).strip() if category_match else "World"
 
     # Strip header lines to get body

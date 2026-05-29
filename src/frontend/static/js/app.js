@@ -322,7 +322,7 @@ function openReader(i) {
 
   $('r-byline').innerHTML = [
     a.authors?.length ? `<span>✍ ${esc(a.authors.join(', '))}</span>` : '',
-    a.location||a.dateline ? `<span>📍 ${esc(a.location||a.dateline)}</span>` : '',
+    a.location||a.dateline ? `<span>📍 ${esc((a.location||a.dateline||'').replace(/\*+/g,'').trim())}</span>` : '',
     `<span>⏱ ${rt(words)} read</span>`,
     a.source_url ? `<a href="${esc(a.source_url)}" target="_blank" rel="noopener">↗ Original source</a>` : '',
   ].filter(Boolean).join('<span style="color:var(--border-hi)">·</span>');
@@ -623,7 +623,7 @@ async function generateSummary(realIdx) {
     const bylineDate  = (bylineParts[1]||'').trim() || new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
 
     const bodyHtml    = bodyToHtml(s.body || '');
-    const locationStr = (s.location || '').trim().toUpperCase();
+    const locationStr = (s.location || '').replace(/\*+/g, '').trim().toUpperCase();
 
     const srcsHtml = (s.sources_list||[]).map((src,n)=>`
       <li class="sum-src-item">
@@ -644,7 +644,7 @@ async function generateSummary(realIdx) {
         </div>
         ${locationStr ? `<div class="sum-location"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><circle cx="5.5" cy="4.5" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 1C3.57 1 2 2.57 2 4.5c0 2.72 3.5 5.5 3.5 5.5s3.5-2.78 3.5-5.5C9 2.57 7.43 1 5.5 1z" stroke="currentColor" stroke-width="1.2"/></svg>${esc(locationStr)}</div>` : ''}
         <h2 class="sum-title" contenteditable="false">${esc(s.title||'News Brief')}</h2>
-        ${s.subtitle ? `<p class="sum-subtitle">${esc(s.subtitle)}</p>` : ''}
+        ${(()=>{ const st = (s.subtitle||'').replace(/\*+/g,'').replace(/^sub$/i,'').trim(); return st ? `<p class="sum-subtitle">${esc(st)}</p>` : ''; })()}
         <div class="sum-meta-row">
           <span class="sum-badge">AI BRIEFING</span>
           <button class="sum-category-btn" onclick="openCategoryPicker(this)" title="Change category">${esc(s.category||'World')}</button>
