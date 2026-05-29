@@ -486,7 +486,8 @@ function bodyToHtml(raw) {
       .split(/\n+/).filter(Boolean)
       .map(p=>`<p class="sum-para" contenteditable="false">${p}</p>`).join('');
     if (sec.heading) {
-      return `<div class="sum-section"><h3 class="sum-section-head" contenteditable="false">${esc(sec.heading)}</h3>${parasHtml}</div>`;
+      const headingClean = sec.heading.replace(/\*\*(.+?)\*\*/g,'$1').replace(/\*(.+?)\*/g,'$1');
+      return `<div class="sum-section"><h3 class="sum-section-head" contenteditable="false">${esc(headingClean)}</h3>${parasHtml}</div>`;
     }
     return `<div class="sum-section sum-lede">${parasHtml}</div>`;
   }).join('');

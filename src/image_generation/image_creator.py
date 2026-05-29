@@ -485,8 +485,12 @@ def generate_article_image(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Build prompts
-    prompt = build_image_prompt(article)
+    # Build prompts — try Groq-generated article-specific prompt first
+    try:
+        from src.image_generation.prompt_generator import generate_groq_image_prompt
+        prompt = generate_groq_image_prompt(article) or build_image_prompt(article)
+    except Exception:
+        prompt = build_image_prompt(article)
     negative_prompt = build_negative_prompt()
 
     # Call HuggingFace if token exists

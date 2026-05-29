@@ -611,7 +611,11 @@ def generate_ai_image(idx: int):
 
         AI_IMAGES_STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-        prompt = build_image_prompt(article)
+        try:
+            from src.image_generation.prompt_generator import generate_groq_image_prompt
+            prompt = generate_groq_image_prompt(article) or build_image_prompt(article)
+        except Exception:
+            prompt = build_image_prompt(article)
         negative_prompt = build_negative_prompt()
 
         import urllib.parse, time as _time
@@ -660,7 +664,7 @@ def generate_ai_image(idx: int):
         AI_IMAGES[key] = url
         if public_image_url:
             AI_IMAGE_PUBLIC[key] = public_image_url
-        return jsonify({'status': 'success', 'image_url': url})
+        return jsonify({'status': 'success', 'image_url': url, 'prompt_used': prompt})
 
     except Exception as e:
         tb = traceback.format_exc()
