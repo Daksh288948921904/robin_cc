@@ -488,7 +488,9 @@ function bodyToHtml(raw) {
       current = { heading: hMatch[1].trim(), paras: [] };
     } else {
       const trimmed = line.trim();
-      if (trimmed) current.paras.push(trimmed);
+      // drop bare placeholder tokens the LLM sometimes emits literally
+      const isPlaceholder = /^\*{0,2}(SUB|SUBTITLE|SUBHEADING|SUBHEAD|BYLINE|LOCATION|DATELINE|N\/A)\*{0,2}$/i.test(trimmed);
+      if (trimmed && !isPlaceholder) current.paras.push(trimmed);
     }
   }
   if (current.paras.length || current.heading) sections.push(current);
