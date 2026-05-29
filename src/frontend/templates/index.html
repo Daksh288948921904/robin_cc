@@ -137,8 +137,12 @@
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="0" y="0" width="13" height="3" rx="1" fill="currentColor"/><rect x="0" y="5" width="13" height="3" rx="1" fill="currentColor"/><rect x="0" y="10" width="13" height="3" rx="1" fill="currentColor"/></svg>
           </button>
         </div>
+        <div class="topbar-sep"></div>
+        <div class="topbar-clock" id="topbar-clock"></div>
+        <div class="topbar-user" title="robin cc · Newsroom">
+          <div class="topbar-user-avatar">RC</div>
+        </div>
       </div>
-      <div class="topbar-clock" id="topbar-clock"></div>
     </header>
 
     <!-- Ticker -->
@@ -153,6 +157,17 @@
 
     <!-- Feed area -->
     <div class="feed-area" id="feed-area">
+
+      <!-- Feed header strip -->
+      <div class="feed-header" id="feed-header">
+        <div class="feed-header-left">
+          <span class="feed-header-title" id="feed-header-title">All Stories</span>
+          <span class="feed-header-count" id="feed-header-count"></span>
+        </div>
+        <div class="feed-header-right">
+          <span class="feed-header-date" id="feed-header-date"></span>
+        </div>
+      </div>
 
       <!-- Skeleton (shown while loading) -->
       <div class="skeleton-grid" id="skeleton" style="display:none">

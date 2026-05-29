@@ -205,7 +205,7 @@ function cardHTML(a, i) {
       </div>`;
   }
 
-  return `<article class="card${isHero?' card-hero':''}" onclick="openReader(${i})">
+  return `<article class="card${isHero?' card-hero':''}" data-cat="${cat.key}" onclick="openReader(${i})">
     ${media}
     <div class="card-badges">
       <span class="card-cat-badge ${cat.cls}">${cat.key}</span>
@@ -214,7 +214,7 @@ function cardHTML(a, i) {
     ${isHero ? `<span class="card-featured-label">Lead Story</span>` : ''}
     <div class="card-info">
       <div class="card-source-row">
-        <span class="card-source-dot" style="background:${c1};box-shadow:0 0 7px ${c1}88"></span>
+        <span class="card-source-dot"></span>
         <span class="card-source">${esc(a.source_name||'Unknown')}</span>
         ${a.region ? `<span class="card-region">· ${esc(a.region)}</span>` : ''}
         <span class="card-date">${date}</span>
@@ -249,6 +249,21 @@ function listCardHTML(a, i) {
 }
 
 function renderFeed() {
+  // Update feed header
+  const hdrCount = $('feed-header-count');
+  const hdrTitle = $('feed-header-title');
+  const hdrDate  = $('feed-header-date');
+  if (hdrCount) hdrCount.textContent = SHOWN.length ? `${SHOWN.length} stor${SHOWN.length===1?'y':'ies'}` : '';
+  if (hdrTitle) {
+    const activeCat = document.querySelector('.nav-btn.active[data-cat]');
+    const label = activeCat ? (activeCat.textContent.trim().replace(/\d+/g,'').trim() || 'All Stories') : 'All Stories';
+    hdrTitle.textContent = label;
+  }
+  if (hdrDate) {
+    const now = new Date();
+    hdrDate.textContent = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  }
+
   if (!SHOWN.length) {
     gridEl.innerHTML=''; listEl.innerHTML='';
     gridEl.classList.add('hidden'); listEl.classList.add('hidden');
