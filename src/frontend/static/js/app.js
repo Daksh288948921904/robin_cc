@@ -20,6 +20,7 @@ let IG_EDIT_MODE     = false; // instagram social edit toggle
 let ACTIVITY_MAP     = {};    // realIdx → {published_hocalwire, video_sent, headline, source_name, last_at}
 let FEED_VISIBLE     = true;  // false when activity view is shown
 let SELECTED_IMAGE   = null;  // URL chosen in the image picker (null = use article default)
+let _hocalwirePreviewData = null; // stashed between preview fetch and confirm
 
 // ── DOM ──────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -547,7 +548,7 @@ function toggleEditMode() {
     editBtn.classList.remove('active');
     editBtn.innerHTML = `
       <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9 1l3 3-7 7H2V8l7-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-      Edit Briefing`;
+      Edit Story`;
     toast('ok', 'Edits saved — ready to download');
   }
 }
@@ -580,7 +581,7 @@ function openCategoryPicker(btn) {
   }, 0);
 }
 
-function selectCategory(item, category) {
+function selectCategory(_item, category) {
   const btn = document.querySelector('.sum-category-btn');
   if (btn) btn.textContent = category;
   if (CURRENT_SUMM) CURRENT_SUMM.category = category;
@@ -665,7 +666,7 @@ async function generateSummary(realIdx) {
         <div class="sum-actions">
           <button class="edit-briefing-btn" onclick="toggleEditMode()">
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9 1l3 3-7 7H2V8l7-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-            Edit Briefing
+            Edit Story
           </button>
           <button class="download-btn" onclick="downloadDocx(${realIdx})">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -727,11 +728,92 @@ async function publishToHocalwire() {
   const spinner = $('publish-spinner');
 
   pb.disabled = true;
-  label.textContent = 'Publishing…';
+  label.textContent = 'Loading preview…';
   spinner.classList.remove('hidden');
 
   try {
     const edited = collectEditedContent();
+    const res  = await fetch(`/api/articles/${realIdx}/preview-publish`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify(edited),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    pb.disabled = false;
+    label.textContent = 'Publish to Hocalwire';
+    spinner.classList.add('hidden');
+
+    if (!res.ok || data.status !== 'success') {
+      toast('err', data.message || 'Preview failed');
+      return;
+    }
+
+    // Stash preview data for confirm step
+    _hocalwirePreviewData = { realIdx, edited, previewResp: data };
+    _openHocalwirePreview(data);
+
+  } catch(e) {
+    pb.disabled = false;
+    label.textContent = 'Publish to Hocalwire';
+    spinner.classList.add('hidden');
+    toast('err', `Preview error: ${e.message}`);
+  }
+}
+
+function _openHocalwirePreview(d) {
+  const metaEl = $('hocal-preview-meta');
+  const bodyEl = $('hocal-preview-body');
+
+  const imgHtml = d.image_url
+    ? `<img class="hocal-prev-img" src="${esc(d.image_url)}" alt="Article image" onerror="this.style.display='none'">`
+    : '';
+
+  metaEl.innerHTML = `
+    <div class="hocal-prev-heading">${esc(d.heading)}</div>
+    ${d.sub_heading ? `<div class="hocal-prev-subheading">${esc(d.sub_heading)}</div>` : ''}
+    ${imgHtml}
+    <div class="hocal-prev-tags">
+      <span class="hocal-tag hocal-tag-loc">
+        <svg width="10" height="10" viewBox="0 0 11 11" fill="none"><circle cx="5.5" cy="4.5" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 1C3.57 1 2 2.57 2 4.5c0 2.72 3.5 5.5 3.5 5.5s3.5-2.78 3.5-5.5C9 2.57 7.43 1 5.5 1z" stroke="currentColor" stroke-width="1.2"/></svg>
+        ${esc(d.location)}
+      </span>
+      <span class="hocal-tag">${esc(d.category)}</span>
+      <span class="hocal-tag">${esc(d.language.toUpperCase())}</span>
+      <span class="hocal-tag hocal-tag-type">${esc(d.news_type)}</span>
+      ${d.reporter ? `<span class="hocal-tag hocal-tag-reporter">By ${esc(d.reporter)}</span>` : ''}
+    </div>`;
+
+  bodyEl.innerHTML = `
+    <div class="hocal-prev-label">Story (as sent to Hocalwire)</div>
+    <div class="hocal-prev-story">${d.html_story}</div>`;
+
+  const overlay = $('hocal-preview-overlay');
+  overlay.classList.add('open');
+  $('hocal-confirm-btn').disabled = false;
+  $('hocal-confirm-label').textContent = 'Confirm & Publish';
+  $('hocal-confirm-spinner').classList.add('hidden');
+}
+
+function closeHocalwirePreview(e) {
+  if (e && e.target !== $('hocal-preview-overlay')) return;
+  $('hocal-preview-overlay').classList.remove('open');
+}
+
+async function confirmPublishToHocalwire() {
+  const stored = _hocalwirePreviewData;
+  if (!stored) return;
+
+  const { realIdx, edited } = stored;
+  const confirmBtn    = $('hocal-confirm-btn');
+  const confirmLabel  = $('hocal-confirm-label');
+  const confirmSpinner = $('hocal-confirm-spinner');
+
+  confirmBtn.disabled = true;
+  confirmLabel.textContent = 'Publishing…';
+  confirmSpinner.classList.remove('hidden');
+
+  try {
     const res  = await fetch(`/api/articles/${realIdx}/publish`, {
       method:  'POST',
       headers: {'Content-Type': 'application/json'},
@@ -740,24 +822,24 @@ async function publishToHocalwire() {
     const data = await res.json().catch(() => ({}));
 
     if (res.ok && data.status === 'success') {
-      label.textContent = '✓ Published';
-      spinner.classList.add('hidden');
+      $('hocal-preview-overlay').classList.remove('open');
+      const label   = $('publish-label');
+      if (label) label.textContent = '✓ Published';
       const feedNote = data.feed_id ? ` · Feed ID: ${data.feed_id}` : '';
       toast('ok', `Published to Hocalwire${feedNote}`);
-      // Track locally and refresh alert
       recordActivity(realIdx, {published_hocalwire: true});
       updatePublishedAlert(realIdx);
       refreshActivityCount();
     } else {
-      pb.disabled = false;
-      label.textContent = 'Publish to Hocalwire';
-      spinner.classList.add('hidden');
+      confirmBtn.disabled = false;
+      confirmLabel.textContent = 'Confirm & Publish';
+      confirmSpinner.classList.add('hidden');
       toast('err', data.message || 'Publish failed');
     }
   } catch(e) {
-    pb.disabled = false;
-    label.textContent = 'Publish to Hocalwire';
-    spinner.classList.add('hidden');
+    confirmBtn.disabled = false;
+    confirmLabel.textContent = 'Confirm & Publish';
+    confirmSpinner.classList.add('hidden');
     toast('err', `Publish error: ${e.message}`);
   }
 }
@@ -941,7 +1023,7 @@ async function loadSocialReactions(realIdx) {
   }
 }
 
-function renderSocialSection(platform, data, secEl, outerEl, realIdx) {
+function renderSocialSection(platform, data, secEl, outerEl, _realIdx) {
   if (!data || !data.posts?.length) {
     if (outerEl) outerEl.style.display = 'none';
     return;

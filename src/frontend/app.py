@@ -467,6 +467,90 @@ def generate_social(idx: int):
     return jsonify({'status': 'success', 'social': result})
 
 
+@app.route('/api/articles/<int:idx>/preview-publish', methods=['POST'])
+@login_required
+def preview_publish_to_hocalwire(idx: int):
+    """
+    Return formatted preview of how the article will appear in Hocalwire.
+    Runs location/category extraction and markdown→HTML conversion without uploading.
+    """
+    if idx < 0 or idx >= len(SCRAPED_ARTICLES):
+        return jsonify({'status': 'error', 'message': 'Article not found'}), 404
+
+    key = str(idx)
+    cached = SUMMARIES.get(key)
+    if not cached:
+        return jsonify({
+            'status': 'error',
+            'message': 'Generate the AI Synthesis first before publishing.'
+        }), 400
+
+    main_article = SCRAPED_ARTICLES[idx]
+    body_json = request.get_json(silent=True) or {}
+
+    title          = body_json.get('edited_title') or cached.get('title') or main_article.get('heading', '')
+    body           = body_json.get('edited_body')  or cached.get('body', '')
+    selected_image = body_json.get('selected_image')
+    category       = body_json.get('category') or cached.get('category') or 'General'
+
+    if not title or not body:
+        return jsonify({'status': 'error', 'message': 'Summary has no title or body'}), 400
+
+    try:
+        from src.api_integrations.hocalwire_uploader import format_article_for_cms
+        from src.content_generation.location_extractor import extract_location_and_category
+
+        # A /static/ path is local to this server — Hocalwire cannot fetch it.
+        # Fall through to the public URL stored at generation time.
+        _si = selected_image if selected_image and not selected_image.startswith('/static/') else None
+        image_url = (
+            _si
+            or AI_IMAGE_PUBLIC.get(key)
+            or main_article.get('image_url', '')
+            or main_article.get('top_image', '')
+        )
+
+        reporter = cached.get('reporter', '')
+
+        article_payload = {
+            'heading':     title,
+            'sub_heading': cached.get('subtitle', ''),
+            'story':       body,
+            'image_url':   image_url,
+            'language':    'en',
+            'location':    cached.get('location') or main_article.get('location', 'Hyderabad'),
+            'reporter':    reporter,
+        }
+
+        try:
+            location, category_id, category_name = extract_location_and_category(article_payload)
+        except Exception:
+            location      = article_payload['location']
+            category_id   = os.getenv('HOCALWIRE_CATEGORY_ID', '770')
+            category_name = 'General'
+
+        html_story = format_article_for_cms(body)
+
+        return jsonify({
+            'status':        'success',
+            'heading':       title,
+            'sub_heading':   cached.get('subtitle', ''),
+            'html_story':    html_story,
+            'image_url':     image_url,
+            'location':      location,
+            'category':      category_name,
+            'category_id':   category_id,
+            'language':      'en',
+            'news_type':     os.getenv('HOCALWIRE_NEWS_TYPE', 'CITIZEN_FEED'),
+            'reporter':      reporter,
+        })
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        app.logger.error('Hocalwire preview error: %s\n%s', e, tb)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/api/articles/<int:idx>/publish', methods=['POST'])
 @login_required
 def publish_to_hocalwire(idx: int):
@@ -499,9 +583,11 @@ def publish_to_hocalwire(idx: int):
     try:
         from src.api_integrations.hocalwire_uploader import upload_to_hocalwire
 
-        # Image priority: user's picker choice → AI-generated → scraped
+        # A /static/ path is local to this server — Hocalwire cannot fetch it.
+        # Fall through to the public URL stored at generation time.
+        _si = selected_image if selected_image and not selected_image.startswith('/static/') else None
         image_url = (
-            selected_image
+            _si
             or AI_IMAGE_PUBLIC.get(key)
             or main_article.get('image_url', '')
             or main_article.get('top_image', '')
@@ -513,6 +599,7 @@ def publish_to_hocalwire(idx: int):
             'image_url': image_url,
             'language':  'en',
             'location':  cached.get('location') or main_article.get('location', 'Hyderabad'),
+            'reporter':  cached.get('reporter', ''),
         }
 
         success = upload_to_hocalwire(article_payload)

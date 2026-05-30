@@ -481,7 +481,8 @@ def upload_to_hocalwire(
         "language": article.get('language', 'en'),
         "sessionId": user_session_id,  # User's session ID from login/registration
         "news_type": os.getenv('HOCALWIRE_NEWS_TYPE', 'CITIZEN_FEED'),
-        "publishedDate": published_date  # Add publish date to fix "Date: null" issue
+        "publishedDate": published_date,  # Add publish date to fix "Date: null" issue
+        "reporter_name": article.get('reporter', '')
     }
     
     # Dry run mode - just log and return
