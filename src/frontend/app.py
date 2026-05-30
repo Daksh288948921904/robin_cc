@@ -721,8 +721,13 @@ def generate_ai_image(idx: int):
         return jsonify({'status': 'error', 'message': 'Article not found'}), 404
 
     key = str(idx)
-    if key in AI_IMAGES:
+    force = request.args.get('force', 'false').lower() == 'true'
+    if not force and key in AI_IMAGES:
         return jsonify({'status': 'success', 'image_url': AI_IMAGES[key]})
+
+    # Clear stale cache entries so fresh image is used for publish
+    AI_IMAGES.pop(key, None)
+    AI_IMAGE_PUBLIC.pop(key, None)
 
     article = SCRAPED_ARTICLES[idx]
 

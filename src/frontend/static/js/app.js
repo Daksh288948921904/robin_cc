@@ -765,9 +765,14 @@ function _openHocalwirePreview(d) {
   const metaEl = $('hocal-preview-meta');
   const bodyEl = $('hocal-preview-body');
 
-  const imgHtml = d.image_url
-    ? `<img class="hocal-prev-img" src="${esc(d.image_url)}" alt="Article image" onerror="this.style.display='none'">`
-    : '';
+  const imgHtml = `<div class="hocal-prev-img-wrap">
+    ${d.image_url ? `<img class="hocal-prev-img" id="hocal-prev-img" src="${esc(d.image_url)}" alt="Article image" onerror="this.style.display='none'">` : ''}
+    <button class="hocal-regen-btn" id="hocal-regen-btn" onclick="regenHocalwireImage()">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      <span id="hocal-regen-label">Regen Image</span>
+      <span class="hocal-regen-spinner hidden" id="hocal-regen-spinner"></span>
+    </button>
+  </div>`;
 
   metaEl.innerHTML = `
     <div class="hocal-prev-heading">${esc(d.heading)}</div>
@@ -795,9 +800,57 @@ function _openHocalwirePreview(d) {
   $('hocal-confirm-spinner').classList.add('hidden');
 }
 
+async function regenHocalwireImage() {
+  const stored = _hocalwirePreviewData;
+  if (!stored) return;
+
+  const btn     = $('hocal-regen-btn');
+  const label   = $('hocal-regen-label');
+  const spinner = $('hocal-regen-spinner');
+
+  btn.disabled = true;
+  label.textContent = 'Generating…';
+  spinner.classList.remove('hidden');
+
+  try {
+    const res  = await fetch(`/api/articles/${stored.realIdx}/image?force=true`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.status === 'success') {
+      const imgEl = $('hocal-prev-img');
+      if (imgEl) {
+        imgEl.src = data.image_url;
+        imgEl.style.display = '';
+      } else {
+        const wrap = document.querySelector('.hocal-prev-img-wrap');
+        if (wrap) {
+          const newImg = document.createElement('img');
+          newImg.className = 'hocal-prev-img';
+          newImg.id = 'hocal-prev-img';
+          newImg.alt = 'Article image';
+          newImg.src = data.image_url;
+          newImg.onerror = () => { newImg.style.display = 'none'; };
+          wrap.insertBefore(newImg, wrap.firstChild);
+        }
+      }
+      stored.previewResp.image_url = data.image_url;
+    } else {
+      toast('err', data.message || 'Image generation failed');
+    }
+  } catch(e) {
+    toast('err', `Regen error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    label.textContent = 'Regen Image';
+    spinner.classList.add('hidden');
+  }
+}
+
 function closeHocalwirePreview(e) {
   if (e && e.target !== $('hocal-preview-overlay')) return;
   $('hocal-preview-overlay').classList.remove('open');
+  $('hocal-success-screen').classList.add('hidden');
+  $('hocal-preview-content').classList.remove('hidden');
 }
 
 async function confirmPublishToHocalwire() {
@@ -823,22 +876,10 @@ async function confirmPublishToHocalwire() {
 
     if (res.ok && data.status === 'success') {
       // Show success screen inside modal, then auto-close
-      const feedId   = data.feed_id || '';
-      const modalEl  = $('hocal-preview-overlay').querySelector('.hocal-preview-modal');
-      if (modalEl) {
-        modalEl.innerHTML = `
-          <div class="hocal-success-screen">
-            <div class="hocal-success-icon">
-              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-                <circle cx="20" cy="20" r="19" stroke="#22c55e" stroke-width="2"/>
-                <path d="M12 20l6 6 10-12" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </div>
-            <div class="hocal-success-title">Published to Hocalwire</div>
-            <div class="hocal-success-sub">Article is now live on the public feed${feedId ? ` · Feed ID: <strong>${esc(feedId)}</strong>` : ''}</div>
-            <div class="hocal-success-closing">Closing in a moment…</div>
-          </div>`;
-      }
+      const feedId = data.feed_id || '';
+      $('hocal-success-sub').innerHTML = `Article is now live on the public feed${feedId ? ` · Feed ID: <strong>${esc(feedId)}</strong>` : ''}`;
+      $('hocal-success-screen').classList.remove('hidden');
+      $('hocal-preview-content').classList.add('hidden');
 
       // Update publish button
       const label = $('publish-label');
@@ -855,6 +896,8 @@ async function confirmPublishToHocalwire() {
       // Close modal after 2.5 s
       setTimeout(() => {
         $('hocal-preview-overlay').classList.remove('open');
+        $('hocal-success-screen').classList.add('hidden');
+        $('hocal-preview-content').classList.remove('hidden');
       }, 2500);
     } else {
       confirmBtn.disabled = false;
