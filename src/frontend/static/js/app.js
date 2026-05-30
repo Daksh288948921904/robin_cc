@@ -762,6 +762,10 @@ async function publishToHocalwire() {
 }
 
 function _openHocalwirePreview(d) {
+  // Always reset success/content visibility before showing preview
+  $('hocal-success-screen').style.display = 'none';
+  $('hocal-preview-content').style.display = '';
+
   const metaEl = $('hocal-preview-meta');
   const bodyEl = $('hocal-preview-body');
 
@@ -849,8 +853,8 @@ async function regenHocalwireImage() {
 function closeHocalwirePreview(e) {
   if (e && e.target !== $('hocal-preview-overlay')) return;
   $('hocal-preview-overlay').classList.remove('open');
-  $('hocal-success-screen').classList.add('hidden');
-  $('hocal-preview-content').classList.remove('hidden');
+  $('hocal-success-screen').style.display = 'none';
+  $('hocal-preview-content').style.display = '';
 }
 
 async function confirmPublishToHocalwire() {
@@ -878,8 +882,8 @@ async function confirmPublishToHocalwire() {
       // Show success screen inside modal, then auto-close
       const feedId = data.feed_id || '';
       $('hocal-success-sub').innerHTML = `Article is now live on the public feed${feedId ? ` · Feed ID: <strong>${esc(feedId)}</strong>` : ''}`;
-      $('hocal-success-screen').classList.remove('hidden');
-      $('hocal-preview-content').classList.add('hidden');
+      $('hocal-success-screen').style.display = 'flex';
+      $('hocal-preview-content').style.display = 'none';
 
       // Update publish button
       const label = $('publish-label');
@@ -896,8 +900,8 @@ async function confirmPublishToHocalwire() {
       // Close modal after 2.5 s
       setTimeout(() => {
         $('hocal-preview-overlay').classList.remove('open');
-        $('hocal-success-screen').classList.add('hidden');
-        $('hocal-preview-content').classList.remove('hidden');
+        $('hocal-success-screen').style.display = 'none';
+        $('hocal-preview-content').style.display = '';
       }, 2500);
     } else {
       confirmBtn.disabled = false;
