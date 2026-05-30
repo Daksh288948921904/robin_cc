@@ -1232,10 +1232,51 @@ async function loadAIImage(realIdx) {
       // Replace old image area with picker
       if (scrapedImg) scrapedImg.remove();
       container.insertBefore(picker, container.firstChild);
+
+      // Regen button below picker
+      const regenBtn = document.createElement('button');
+      regenBtn.id = 'reader-regen-btn';
+      regenBtn.className = 'reader-regen-btn';
+      regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Regen AI Image`;
+      regenBtn.onclick = () => regenReaderImage(realIdx);
+      container.insertBefore(regenBtn, picker.nextSibling);
     }
   } catch(_e) {
     const statusEl = $('r-ai-status');
     if (statusEl) statusEl.remove();
+  }
+}
+
+async function regenReaderImage(realIdx) {
+  const btn = $('reader-regen-btn');
+  if (!btn) return;
+
+  btn.disabled = true;
+  btn.innerHTML = `<span class="reader-regen-spinner"></span> Generating…`;
+
+  try {
+    const res  = await fetch(`/api/articles/${realIdx}/image?force=true`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.status === 'success') {
+      // Update AI image thumbnail and selection
+      const aiOpt = document.querySelector('.img-pick-option[data-type="ai"]');
+      if (aiOpt) {
+        const thumb = aiOpt.querySelector('.img-pick-thumb');
+        if (thumb) thumb.src = data.image_url;
+        aiOpt.onclick = () => selectImage(data.image_url, 'ai');
+      }
+      // Re-select AI image with new URL
+      SELECTED_IMAGE = data.image_url;
+      selectImage(data.image_url, 'ai');
+    } else {
+      toast('err', data.message || 'Image generation failed');
+    }
+  } catch(e) {
+    toast('err', `Regen error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Regen AI Image`;
   }
 }
 
