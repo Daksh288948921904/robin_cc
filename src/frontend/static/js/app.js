@@ -822,14 +822,40 @@ async function confirmPublishToHocalwire() {
     const data = await res.json().catch(() => ({}));
 
     if (res.ok && data.status === 'success') {
-      $('hocal-preview-overlay').classList.remove('open');
-      const label   = $('publish-label');
+      // Show success screen inside modal, then auto-close
+      const feedId   = data.feed_id || '';
+      const modalEl  = $('hocal-preview-overlay').querySelector('.hocal-preview-modal');
+      if (modalEl) {
+        modalEl.innerHTML = `
+          <div class="hocal-success-screen">
+            <div class="hocal-success-icon">
+              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="19" stroke="#22c55e" stroke-width="2"/>
+                <path d="M12 20l6 6 10-12" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="hocal-success-title">Published to Hocalwire</div>
+            <div class="hocal-success-sub">Article is now live on the public feed${feedId ? ` · Feed ID: <strong>${esc(feedId)}</strong>` : ''}</div>
+            <div class="hocal-success-closing">Closing in a moment…</div>
+          </div>`;
+      }
+
+      // Update publish button
+      const label = $('publish-label');
       if (label) label.textContent = '✓ Published';
-      const feedNote = data.feed_id ? ` · Feed ID: ${data.feed_id}` : '';
-      toast('ok', `Published to Hocalwire${feedNote}`);
+      const pb = $('publish-btn');
+      if (pb) pb.disabled = true;
+
+      // Update activity tracking
       recordActivity(realIdx, {published_hocalwire: true});
       updatePublishedAlert(realIdx);
       refreshActivityCount();
+      renderActivityView();
+
+      // Close modal after 2.5 s
+      setTimeout(() => {
+        $('hocal-preview-overlay').classList.remove('open');
+      }, 2500);
     } else {
       confirmBtn.disabled = false;
       confirmLabel.textContent = 'Confirm & Publish';
