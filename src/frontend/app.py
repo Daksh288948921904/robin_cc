@@ -115,6 +115,35 @@ ACTIVITY:        dict = {}  # index → {headline, source_name, published_hocalw
 # Static directory where AI-generated images are saved and served
 AI_IMAGES_STATIC_DIR = Path(__file__).parent / 'static' / 'ai_images'
 
+
+def _upload_to_catbox(filepath: Path) -> str:
+    """Upload a local image file to catbox.moe and return the permanent public URL.
+
+    Catbox.moe is a free anonymous image host. The URL is permanent and serves
+    the exact bytes we saved locally — so Hocalwire fetches the same image the
+    user saw in the picker, not a regenerated Pollinations variant.
+
+    Returns the URL string on success, or empty string on failure.
+    """
+    try:
+        import requests as _req
+        with open(filepath, 'rb') as f:
+            resp = _req.post(
+                'https://catbox.moe/user/api.php',
+                data={'reqtype': 'fileupload'},
+                files={'fileToUpload': (filepath.name, f, 'image/png')},
+                timeout=30,
+            )
+        resp.raise_for_status()
+        url = resp.text.strip()
+        if url.startswith('https://'):
+            return url
+        app.logger.warning(f"Catbox unexpected response: {url[:200]}")
+        return ''
+    except Exception as e:
+        app.logger.warning(f"Catbox upload failed (will use Pollinations fallback): {e}")
+        return ''
+
 # Background scrape job state
 _scrape_state = {
     'running': False,
@@ -758,8 +787,18 @@ def generate_ai_image(idx: int):
 
         url = f"/static/ai_images/{filename}"
         AI_IMAGES[key] = url
-        if public_image_url:
+
+        # Upload to catbox.moe for a stable public URL.
+        # Pollinations URLs regenerate on every fetch; HuggingFace images have no
+        # public URL at all. Catbox gives us the exact bytes Hocalwire will receive.
+        stable_url = _upload_to_catbox(filepath)
+        if stable_url:
+            AI_IMAGE_PUBLIC[key] = stable_url
+            app.logger.info(f"AI image hosted at: {stable_url}")
+        elif public_image_url:
+            # Fallback to Pollinations URL if catbox upload fails
             AI_IMAGE_PUBLIC[key] = public_image_url
+
         return jsonify({'status': 'success', 'image_url': url, 'prompt_used': prompt})
 
     except Exception as e:
