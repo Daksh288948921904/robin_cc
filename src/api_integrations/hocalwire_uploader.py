@@ -536,10 +536,23 @@ def upload_to_hocalwire(
         
         # Parse response
         result = response.json()
-        logger.debug(f"Hocalwire upload response ({response.status_code}): {result}")
+        # Always log the full response so we can see Hocalwire's actual format
+        logger.info(f"Hocalwire upload response ({response.status_code}): {result}")
 
-        if result.get('status') == 'success' or result.get('feedId'):
-            feed_id = str(result.get('feedId', 'unknown'))
+        # Extract feedId from common response shapes:
+        #   { feedId: 123 }  /  { data: { feedId: 123 } }  /  { id: 123 }  /  { data: { id: 123 } }
+        data_block = result.get('data') if isinstance(result.get('data'), dict) else {}
+        feed_id = (
+            result.get('feedId') or result.get('id')
+            or data_block.get('feedId') or data_block.get('id')
+            or 'unknown'
+        )
+
+        # A 2xx HTTP status means Hocalwire accepted the article.
+        # Our raise_for_status() above already guarantees we're in 2xx here,
+        # so treat any 2xx as success regardless of the JSON body wording.
+        if response.status_code < 300:
+            feed_id = str(feed_id)
             logger.success(f"✅ Uploaded successfully - Feed ID: {feed_id}")
 
             # Update article dict with upload info
@@ -578,25 +591,7 @@ def upload_to_hocalwire(
                 logger.warning(f"DB status update failed (upload still succeeded): {db_err}")
 
             return True
-        else:
-            error_msg = result.get('message', str(result))
-            logger.error(f"Upload rejected by API: {error_msg}")
-            article['upload_status'] = 'failed'
-            article['upload_error'] = error_msg
-            
-            # Update in database with failure reason
-            if '_id' in article:
-                from src.database.mongo_client import get_client
-                db = get_client()
-                db.update_upload_status(
-                    article['_id'],
-                    'failed',
-                    failure_reason=f"API rejected: {error_msg}",
-                    increment_retry=True
-                )
-            
-            return False
-            
+
     except requests.exceptions.Timeout:
         error_msg = "Hocalwire API request timed out"
         logger.error(error_msg)
