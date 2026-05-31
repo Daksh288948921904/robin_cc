@@ -993,6 +993,161 @@ async function sendVideoWorkflow() {
   }
 }
 
+// ── Social Post Preview ───────────────────────────────────────
+let _socialPostsCache  = {};      // realIdx → {twitter, instagram, facebook, linkedin}
+let _socialImageCache  = {};      // realIdx → image URL
+let _socialTvCache     = {};      // realIdx → tv script string
+let _activeSocialTab   = 'instagram';
+
+function openSocialPostModal() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) { toast('err', 'Open an article first'); return; }
+  $('smodal-overlay').classList.add('open');
+  switchSocialTab(_activeSocialTab);
+  if (_socialPostsCache[realIdx]) {
+    _renderSocialPosts(_socialPostsCache[realIdx], _socialImageCache[realIdx] || '', _socialTvCache[realIdx] || '');
+  } else {
+    _fetchSocialPosts(realIdx);
+  }
+}
+
+function closeSocialPostModal(e) {
+  if (e && e.target !== $('smodal-overlay')) return;
+  $('smodal-overlay').classList.remove('open');
+}
+
+function switchSocialTab(platform) {
+  _activeSocialTab = platform;
+  ['instagram','twitter','facebook','linkedin','tv'].forEach(p => {
+    $('stab-' + p).classList.toggle('active', p === platform);
+    $('spane-' + p).classList.toggle('active', p === platform);
+  });
+}
+
+async function _fetchSocialPosts(realIdx) {
+  const loading = $('smodal-loading');
+  loading.classList.remove('hidden');
+  // Clear all text placeholders
+  ['sp-ig-text','sp-tw-text','sp-fb-text','sp-li-text'].forEach(id => {
+    const el = $(id);
+    if (el) { if (id === 'sp-ig-text') { const body = el.querySelector('.sp-ig-caption-body'); if (body) body.textContent = '…'; } else el.textContent = '…'; }
+  });
+
+  try {
+    const res  = await fetch(`/api/articles/${realIdx}/social-posts`, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'success' && data.posts) {
+      _socialPostsCache[realIdx] = data.posts;
+      // Prefer the user's picker selection over what the backend returned
+      const imageToUse = SELECTED_IMAGE || data.image_url || '';
+      _socialImageCache[realIdx] = imageToUse;
+      _socialTvCache[realIdx]    = data.tv_script  || '';
+      _renderSocialPosts(data.posts, imageToUse, data.tv_script || '');
+    } else {
+      toast('err', data.message || 'Could not generate social posts');
+    }
+  } catch(e) {
+    toast('err', `Network error: ${e.message}`);
+  } finally {
+    loading.classList.add('hidden');
+  }
+}
+
+function _renderSocialPosts(posts, imageUrl, tvScript) {
+  // Instagram caption
+  const igBody = $('sp-ig-text');
+  if (igBody) {
+    const captionEl = igBody.querySelector('.sp-ig-caption-body');
+    if (captionEl) captionEl.innerHTML = _formatPostText(posts.instagram || '');
+  }
+  // Instagram image — replace placeholder with actual image
+  const igImg = $('sp-ig-image');
+  if (igImg && imageUrl) {
+    igImg.innerHTML = `<img src="${esc(imageUrl)}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block" onerror="this.parentElement.innerHTML='<div class=sp-img-err>Image unavailable</div>'">`;
+  }
+  // Twitter
+  const twEl = $('sp-tw-text');
+  if (twEl) twEl.innerHTML = _formatPostText(posts.twitter || '');
+  _setCardImage('sp-tw-image', imageUrl, 'sp-tw-img-wrap');
+  // Facebook
+  const fbEl = $('sp-fb-text');
+  if (fbEl) fbEl.innerHTML = _formatPostText(posts.facebook || '');
+  _setCardImage('sp-fb-image', imageUrl, 'sp-fb-img-wrap');
+  // LinkedIn
+  const liEl = $('sp-li-text');
+  if (liEl) liEl.innerHTML = _formatPostText(posts.linkedin || '');
+  _setCardImage('sp-li-image', imageUrl, 'sp-li-img-wrap');
+  // TV Script
+  const tvEl = $('sp-tv-text');
+  if (tvEl && tvScript) {
+    // Clean and format the script for teleprompter display
+    const formatted = esc(tvScript)
+      .replace(/\*\*([^*]+)\*\*/g, '$1')          // strip **bold** markdown
+      .replace(/\[(?:WORDS|TIME)[^\]]*\]\s*/g, '') // remove meta tags from body (shown in footer)
+      .replace(/\/\//g, '<span class="sp-tv-pause">//</span>')
+      .replace(/\n+$/, '')                         // trim trailing newlines
+      .replace(/\n/g, '<br>');
+    tvEl.innerHTML = formatted;
+    // Update the meta line from [WORDS: X] [TIME: ~Ys]
+    const metaEl = $('sp-tv-meta');
+    if (metaEl) {
+      const wMatch = tvScript.match(/\[WORDS:\s*(\d+)\]/);
+      const tMatch = tvScript.match(/\[TIME:\s*~?(\d+)s\]/);
+      if (wMatch && tMatch) metaEl.textContent = `${wMatch[1]} words · ~${tMatch[1]}s · 150 WPM`;
+    }
+  }
+}
+
+function _setCardImage(containerId, imageUrl, wrapClass) {
+  const el = $(containerId);
+  if (!el) return;
+  if (imageUrl) {
+    el.innerHTML = `<img src="${esc(imageUrl)}" alt="" class="${wrapClass}" onerror="this.parentElement.classList.add('hidden')">`;
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+function _formatPostText(text) {
+  return esc(text)
+    .replace(/(#\w+)/g, '<span class="sp-hashtag">$1</span>')
+    .replace(/\n/g, '<br>');
+}
+
+function copySocialPost() {
+  const realIdx = CURRENT_REAL_IDX;
+  let text = '';
+  if (_activeSocialTab === 'tv') {
+    text = _socialTvCache[realIdx] || '';
+  } else {
+    const posts = _socialPostsCache[realIdx];
+    if (!posts) { toast('err', 'No posts generated yet'); return; }
+    text = posts[_activeSocialTab] || '';
+  }
+  if (!text) { toast('err', 'Nothing to copy'); return; }
+  navigator.clipboard.writeText(text).then(
+    ()  => toast('ok', `${_activeSocialTab === 'tv' ? 'TV script' : _activeSocialTab + ' post'} copied`),
+    ()  => toast('err', 'Clipboard write failed')
+  );
+}
+
+async function regenSocialPosts() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) return;
+  delete _socialPostsCache[realIdx];
+  delete _socialImageCache[realIdx];
+  delete _socialTvCache[realIdx];
+  await _fetchSocialPosts(realIdx);
+}
+
+// Close social modal on Escape
+document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') $('smodal-overlay').classList.remove('open');
+  });
+});
+
 // ── Timeline ─────────────────────────────────────────────────
 async function generateTimeline(realIdx) {
   const tlOuter = $('timeline-outer');
@@ -1196,6 +1351,16 @@ function selectImage(url, type) {
     el.classList.toggle('img-pick-selected', isThis);
     el.querySelector('.img-pick-radio').classList.toggle('img-pick-radio-on', isThis);
   });
+  // Live-update social preview images if the modal already has posts loaded
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx >= 0 && _socialPostsCache[realIdx]) {
+    _socialImageCache[realIdx] = url;
+    const igImg = $('sp-ig-image');
+    if (igImg) igImg.innerHTML = `<img src="${esc(url)}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block" onerror="this.parentElement.innerHTML='<div class=sp-img-err>Image unavailable</div>'">`;
+    _setCardImage('sp-tw-image', url, 'sp-tw-img-wrap');
+    _setCardImage('sp-fb-image', url, 'sp-fb-img-wrap');
+    _setCardImage('sp-li-image', url, 'sp-li-img-wrap');
+  }
 }
 
 // ── AI Image loader ──────────────────────────────────────────

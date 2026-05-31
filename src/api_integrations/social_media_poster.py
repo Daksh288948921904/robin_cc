@@ -1,10 +1,13 @@
+
+
 """
 OSI News Automation System - Social Media Post Generator
 =========================================================
-Generates platform-specific social media posts for Twitter, LinkedIn, 
-Instagram, and Facebook, plus TV anchor scripts.
+Generates platform-specific social media posts for Twitter, LinkedIn,
+Instagram, and Facebook via Groq LLM, with template fallback.
 """
 
+import json
 import os
 import sys
 from typing import Dict, List
@@ -21,6 +24,19 @@ load_dotenv()
 
 
 # ===========================================
+# GROQ CLIENT
+# ===========================================
+
+def _get_groq_client():
+    from groq import Groq
+    load_dotenv()
+    key = os.getenv("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError("No GROQ_API_KEY found in environment")
+    return Groq(api_key=key)
+
+
+# ===========================================
 # SOCIAL MEDIA POST GENERATION
 # ===========================================
 
@@ -30,121 +46,155 @@ def generate_social_posts(
     image_url: str = ""
 ) -> Dict[str, str]:
     """
-    Generate social media posts for all platforms.
-    
-    Creates platform-optimized posts for Twitter, LinkedIn, Instagram,
-    and Facebook following OSI templates.
-    
+    Generate social media posts for all platforms using Groq LLM.
+
+    Falls back to template-based generation if the LLM call fails.
+
     Args:
-        article: Article dictionary with heading, dateline, timestamp, etc.
-        article_url: URL where article is published.
-        image_url: URL of article image.
-        
+        article: Article dictionary with heading, story, location, etc.
+        article_url: URL where the article is published.
+        image_url: URL of the article image.
+
     Returns:
-        Dictionary mapping platform names to post text.
-        
-    Example:
-        >>> posts = generate_social_posts(article, "https://example.com/article/123")
-        >>> print(posts['twitter'])
-        >>> print(posts['linkedin'])
+        Dictionary with keys: twitter, linkedin, instagram, facebook.
     """
-    # Extract article details
     title = article.get('heading', 'Breaking News')
     dateline = article.get('dateline', article.get('location', 'NEW DELHI'))
-    
-    # Get timestamp
-    timestamp = article.get('timestamp')
-    if not timestamp:
-        timestamp = datetime.now().strftime('%A, %B %d, %Y, %I:%M %p IST')
-    
+    story = (article.get('story', '') or '')[:3000]
     source_count = article.get('source_count', 10)
-    
-    # Shorten title if too long
-    title_short = title if len(title) <= 80 else title[:77] + "..."
-    
-    # Generate posts
-    posts = {}
-    
-    # ==========================================
-    # TWITTER/X (280 character limit)
-    # ==========================================
-    twitter_base = f"""🔥 Trending: {title_short}
 
-Dateline {dateline}: Key insights from {source_count} global pubs.
-Generated {timestamp} by OSI AI.
+    try:
+        posts = _generate_with_llm(title, dateline, story, source_count, article_url)
+        logger.info(f"AI social posts generated for: {title[:50]}...")
+        logger.debug(f"Twitter length: {len(posts.get('twitter', ''))} chars")
+        return posts
+    except Exception as e:
+        logger.warning(f"LLM social post generation failed ({e}), using templates")
+        return _generate_from_templates(title, dateline, source_count, article_url)
 
-{article_url}
 
-#OSINT #NewsAI #Geopolitics"""
-    
-    # Ensure under 280 chars
-    if len(twitter_base) > 280:
-        # Calculate available space for title
-        overhead = len(twitter_base) - len(title_short)
-        available_for_title = 280 - overhead - 10  # 10 char buffer
-        
-        if available_for_title > 20:
-            title_short = title[:available_for_title-3] + "..."
-        
-        # Simplified version
-        twitter_base = f"""🔥 {title_short}
+def _generate_with_llm(
+    title: str,
+    dateline: str,
+    story: str,
+    source_count: int,
+    article_url: str,
+) -> Dict[str, str]:
+    model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    client = _get_groq_client()
 
-{dateline}: {source_count} sources
-{timestamp}
+    prompt = f"""You are a social media strategist for robin cc, a global AI-powered news channel.
 
-{article_url}
+Write platform-specific social media posts for this news article. Use the article content to craft engaging, original copy — not just a restatement of the headline.
 
-#OSINT #NewsAI"""
-    
-    posts['twitter'] = twitter_base
-    
-    # ==========================================
-    # LINKEDIN (Professional, longer form)
-    # ==========================================
-    posts['linkedin'] = f"""In today's fast-moving world, staying ahead means synthesizing global perspectives. OSI AI just compiled this comprehensive analysis on {title} – pulling from {source_count} top publications worldwide.
+ARTICLE TITLE: {title}
+DATELINE: {dateline}
+ARTICLE URL: {article_url}
+SOURCES SYNTHESIZED: {source_count}
 
-Dateline: {dateline} | Generated: {timestamp}
+ARTICLE CONTENT:
+{story}
 
-Discover balanced analysis beyond headlines. What trends are you tracking?
+OUTPUT RULES:
+- Return ONLY valid JSON, no markdown, no explanation
+- All values must be plain strings (no nested objects)
+- Twitter: max 270 chars (leave room for the URL), punchy hook, 2-3 relevant hashtags, include the article URL on its own line at the end
+- LinkedIn: 150-250 words, professional tone, insight-driven, end with a thought-provoking question, include the article URL, 4-5 professional hashtags
+- Instagram: 80-120 words, visual and emotional, use emojis naturally, end with "Link in bio ⬇️", 8-10 discovery hashtags
+- Facebook: 100-150 words, conversational, shareable, end with "Read more: {article_url}", ask followers a question, 3-4 hashtags
 
-{article_url}
+Return this exact JSON structure:
+{{
+  "twitter": "...",
+  "linkedin": "...",
+  "instagram": "...",
+  "facebook": "..."
+}}"""
 
-#OpenSourceIntelligence #MediaTech #AIinJournalism #GlobalNews"""
-    
-    # ==========================================
-    # INSTAGRAM (Visual-first with emojis)
-    # ==========================================
-    posts['instagram'] = f"""{title}
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.75,
+        max_tokens=1200,
+    )
 
-📍 {dateline}
-🕒 Generated: {timestamp}
+    raw = response.choices[0].message.content.strip()
 
-AI-powered scoop: We scanned the globe hourly, scraped {source_count} stories, and built this comprehensive view.
+    # Strip markdown code fences if present
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
 
-Swipe for highlights! 👉
-Link in bio ⬇️
+    posts = json.loads(raw)
 
-#OSINews #TrendingNews #AIGenerated #NewsAutomation #GlobalPerspective"""
-    
-    # ==========================================
-    # FACEBOOK (Conversational & shareable)
-    # ==========================================
-    posts['facebook'] = f"""Today's top trend: {title}
+    # Validate all four keys exist
+    for platform in ("twitter", "linkedin", "instagram", "facebook"):
+        if platform not in posts or not isinstance(posts[platform], str):
+            raise ValueError(f"Missing or invalid '{platform}' key in LLM response")
 
-OSI AI scanned the world hourly, scraped {source_count} publications, and wrote this comprehensive breakdown.
+    # Hard-enforce Twitter limit
+    if len(posts["twitter"]) > 280:
+        posts["twitter"] = posts["twitter"][:277] + "..."
 
-{dateline} | {timestamp}
-
-Read the full story: {article_url}
-
-What do you think about this development? Comment below! 👇
-
-#GlobalNews #AIJournalism #NewsAnalysis"""
-    
-    logger.info(f"Generated social posts for: {title[:50]}...")
-    logger.debug(f"Twitter length: {len(posts['twitter'])} chars")
-    
     return posts
+
+
+def _generate_from_templates(
+    title: str,
+    dateline: str,
+    source_count: int,
+    article_url: str,
+) -> Dict[str, str]:
+    """Template fallback when LLM is unavailable."""
+    timestamp = datetime.now().strftime('%A, %B %d, %Y, %I:%M %p IST')
+    title_short = title if len(title) <= 80 else title[:77] + "..."
+
+    twitter = (
+        f"🔥 {title_short}\n\n"
+        f"{dateline}: {source_count} sources\n\n"
+        f"{article_url}\n\n"
+        f"#OSINT #NewsAI"
+    )
+    if len(twitter) > 280:
+        twitter = twitter[:277] + "..."
+
+    linkedin = (
+        f"OSI AI compiled a comprehensive analysis on {title} — drawing from "
+        f"{source_count} top publications worldwide.\n\n"
+        f"Dateline: {dateline} | {timestamp}\n\n"
+        f"Discover balanced analysis beyond headlines. What trends are you tracking?\n\n"
+        f"{article_url}\n\n"
+        f"#OpenSourceIntelligence #MediaTech #AIinJournalism #GlobalNews"
+    )
+
+    instagram = (
+        f"{title}\n\n"
+        f"📍 {dateline}\n"
+        f"🕒 {timestamp}\n\n"
+        f"AI-powered scoop: We scanned the globe hourly, scraped {source_count} stories, "
+        f"and built this comprehensive view.\n\n"
+        f"Link in bio ⬇️\n\n"
+        f"#OSINews #TrendingNews #AIGenerated #NewsAutomation #GlobalPerspective"
+    )
+
+    facebook = (
+        f"Today's top story: {title}\n\n"
+        f"OSI AI scanned the world hourly, scraped {source_count} publications, "
+        f"and wrote this comprehensive breakdown.\n\n"
+        f"{dateline} | {timestamp}\n\n"
+        f"What do you think about this development? Comment below! 👇\n\n"
+        f"Read more: {article_url}\n\n"
+        f"#GlobalNews #AIJournalism #NewsAnalysis"
+    )
+
+    return {
+        "twitter": twitter,
+        "linkedin": linkedin,
+        "instagram": instagram,
+        "facebook": facebook,
+    }
 
 
 # ===========================================
@@ -157,92 +207,100 @@ def generate_tv_script(
     anchor_name: str = "[Anchor Name]"
 ) -> str:
     """
-    Generate TV anchor script in spoken style.
-    
-    Creates a teleprompter-ready script for TV news anchors,
-    formatted for natural speech with timing markers.
-    
-    Args:
-        article: Article dictionary.
-        duration_seconds: Target script duration (default 59 seconds).
-        anchor_name: Name of the anchor (optional).
-        
-    Returns:
-        Script text formatted for teleprompter.
-        
-    Example:
-        >>> script = generate_tv_script(article, duration_seconds=60)
-        >>> print(script)
+    Generate a teleprompter-ready TV anchor script using Groq LLM.
+    Falls back to template if LLM fails.
     """
-    title = article.get('heading', 'Breaking News')
-    dateline = article.get('dateline', article.get('location', 'NEW DELHI'))
-    timestamp = article.get('timestamp', datetime.now().strftime('%A, %B %d, %Y, %I:%M %p IST'))
-    story = article.get('story', '')
+    title      = article.get('heading', 'Breaking News')
+    dateline   = article.get('dateline', article.get('location', 'NEW DELHI'))
+    story      = (article.get('story', '') or '')[:3000]
     source_count = article.get('source_count', 10)
-    
-    # Extract key points from article
-    # For 59 seconds at 150 WPM = ~147 words
-    # Parse subheadings from story (marked with ##)
-    subheadings = []
-    paragraphs = []
-    
-    for line in story.split('\n'):
-        line = line.strip()
-        if line.startswith('##'):
-            subheadings.append(line.replace('##', '').strip())
-        elif line and not line.startswith('#'):
-            paragraphs.append(line)
-    
-    # Get opening hook from first paragraph
-    opening_hook = paragraphs[0] if paragraphs else "Breaking news from around the world."
-    if len(opening_hook) > 150:
-        opening_hook = opening_hook[:147] + "..."
-    
-    # Determine time of day
+
+    try:
+        script = _generate_tv_script_with_llm(title, dateline, story, source_count, duration_seconds, anchor_name)
+        logger.info(f"AI TV script generated: {len(script.split())} words")
+        return script
+    except Exception as e:
+        logger.warning(f"LLM TV script failed ({e}), using template")
+        return _generate_tv_script_template(title, dateline, story, source_count, duration_seconds, anchor_name)
+
+
+def _generate_tv_script_with_llm(
+    title: str,
+    dateline: str,
+    story: str,
+    source_count: int,
+    duration_seconds: int,
+    anchor_name: str,
+) -> str:
+    model  = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    client = _get_groq_client()
+    target_words = int(duration_seconds * 150 / 60)
+
+    prompt = f"""You are a senior TV news writer for robin cc, a global AI-powered news channel.
+
+Write a teleprompter-ready on-camera anchor script for the following story. The anchor will read this live on air.
+
+STORY HEADLINE: {title}
+DATELINE: {dateline}
+SOURCES SYNTHESISED: {source_count}
+TARGET DURATION: {duration_seconds} seconds (~{target_words} words at 150 WPM)
+ANCHOR NAME: {anchor_name}
+
+ARTICLE CONTENT:
+{story}
+
+SCRIPT RULES:
+- Write ONLY the spoken script — no stage directions, no markdown, no headers
+- Use // to mark natural breath pauses (every 1-2 sentences)
+- Open with a strong hook that captures attention in the first 5 words
+- Cover 3 key facts from the article in the middle section
+- Close with a forward-looking line or handoff ("Stay tuned for more on this story")
+- Mention "robin cc" once naturally (e.g. "robin cc has learned that..." or "as robin cc reported...")
+- DO NOT use bullet points, asterisks, or any formatting
+- Target exactly {target_words} words — count carefully
+- End with: [WORDS: X] [TIME: ~{duration_seconds}s]
+
+Write the script now:"""
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=600,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _generate_tv_script_template(
+    title: str,
+    dateline: str,
+    story: str,
+    source_count: int,
+    duration_seconds: int,
+    anchor_name: str,
+) -> str:
+    """Template fallback for TV script generation."""
     current_hour = datetime.now().hour
-    if current_hour < 12:
-        time_of_day = "morning"
-    elif current_hour < 17:
-        time_of_day = "afternoon"
-    else:
-        time_of_day = "evening"
-    
-    # Build script
-    script = f"""Good {time_of_day}, I'm {anchor_name}.
+    time_of_day  = "morning" if current_hour < 12 else "afternoon" if current_hour < 17 else "evening"
+    timestamp    = datetime.now().strftime('%A, %B %d, %Y, %I:%M %p IST')
 
-Top story today: {title}. // {dateline} –
+    paragraphs  = [l.strip() for l in story.split('\n') if l.strip() and not l.strip().startswith('#')]
+    subheadings = [l.replace('##', '').strip() for l in story.split('\n') if l.strip().startswith('##')]
 
-{opening_hook}
+    opening = (paragraphs[0][:147] + "...") if paragraphs and len(paragraphs[0]) > 150 else (paragraphs[0] if paragraphs else "Breaking news from around the world.")
+    key_pts = ' '.join(f"{h}. //" for h in subheadings[:3]) or ('. '.join(paragraphs[1:3])[:250] + ".")
 
-Our AI at OSI scanned global headlines hourly... pulled the {source_count} most-viewed stories from outlets like BBC, Reuters, and Al Jazeera... then wove them into this comprehensive picture. //
-
-Here's what happened: """
-    
-    # Add 2-3 key points from subheadings
-    key_points_added = 0
-    for subheading in subheadings[:3]:
-        if subheading:
-            script += f"{subheading}. "
-            key_points_added += 1
-    
-    # If no subheadings, use first few sentences
-    if key_points_added == 0 and paragraphs:
-        sentences = '. '.join(paragraphs[:2])
-        if len(sentences) > 200:
-            sentences = sentences[:197] + "..."
-        script += f"{sentences}. "
-    
-    script += f"""//
-
-All sourced and timestamped at {timestamp}. //
-
-Stay tuned for updates. Back after this.
-
-[TOTAL WORDS: {len(script.split())}]
-[ESTIMATED TIME: {len(script.split()) / 150 * 60:.0f} seconds at 150 WPM]"""
-    
-    logger.info(f"Generated TV script: {len(script.split())} words")
-    
+    script = (
+        f"Good {time_of_day}, I'm {anchor_name}. //\n\n"
+        f"Top story: {title}. Dateline — {dateline}. //\n\n"
+        f"{opening} //\n\n"
+        f"robin cc has synthesised {source_count} global sources on this story. Here's what we know: //\n\n"
+        f"{key_pts}\n\n"
+        f"Reported at {timestamp}. //\n\n"
+        f"Stay tuned for more on this story. Back after this.\n\n"
+    )
+    words = len(script.split())
+    script += f"[WORDS: {words}] [TIME: ~{duration_seconds}s]"
     return script
 
 

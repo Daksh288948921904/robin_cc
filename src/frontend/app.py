@@ -108,6 +108,7 @@ COVERAGES:  dict = {}   # index → list of similar article dicts
 SUMMARIES:  dict = {}   # index → summary dict from multi_source_summary
 TIMELINES:  dict = {}   # index → list of {time, event} dicts
 SOCIALS:    dict = {}   # index → {twitter: {...}, instagram: {...}}
+SOCIAL_POSTS: dict = {}  # index → {twitter, linkedin, instagram, facebook} post text
 AI_IMAGES:       dict = {}   # index → /static/ai_images/<filename> URL (local)
 AI_IMAGE_PUBLIC: dict = {}  # index → publicly accessible image URL (Pollinations or HF)
 ACTIVITY:        dict = {}  # index → {headline, source_name, published_hocalwire, published_at, video_sent, video_sent_at}
@@ -189,6 +190,7 @@ def _run_scrape(max_articles: int):
         SUMMARIES.clear()
         TIMELINES.clear()
         SOCIALS.clear()
+        SOCIAL_POSTS.clear()
         AI_IMAGES.clear()
         AI_IMAGE_PUBLIC.clear()
 
@@ -307,11 +309,12 @@ def save_to_json_route():
 @app.route('/api/load', methods=['POST'])
 @login_required
 def load_from_json():
-    global SCRAPED_ARTICLES, COVERAGES, SUMMARIES, TIMELINES, SOCIALS, AI_IMAGES, AI_IMAGE_PUBLIC
+    global SCRAPED_ARTICLES, COVERAGES, SUMMARIES, TIMELINES, SOCIALS, SOCIAL_POSTS, AI_IMAGES, AI_IMAGE_PUBLIC
     COVERAGES.clear()
     SUMMARIES.clear()
     TIMELINES.clear()
     SOCIALS.clear()
+    SOCIAL_POSTS.clear()
     AI_IMAGES.clear()
     AI_IMAGE_PUBLIC.clear()
     try:
@@ -494,6 +497,49 @@ def generate_social(idx: int):
 
     SOCIALS[key] = result
     return jsonify({'status': 'success', 'social': result})
+
+
+@app.route('/api/articles/<int:idx>/social-posts', methods=['POST'])
+@login_required
+def generate_social_posts_route(idx: int):
+    """
+    Generate platform-specific outbound social media post text for article[idx].
+    Uses cached AI synthesis when available. Result is cached per-index.
+    """
+    if idx < 0 or idx >= len(SCRAPED_ARTICLES):
+        return jsonify({'status': 'error', 'message': 'Article not found'}), 404
+
+    key = str(idx)
+    if key in SOCIAL_POSTS:
+        cached_sp = SOCIAL_POSTS[key]
+        return jsonify({'status': 'success', 'posts': cached_sp['posts'], 'image_url': cached_sp.get('image_url', ''), 'tv_script': cached_sp.get('tv_script', '')})
+
+    main_article = SCRAPED_ARTICLES[idx]
+    cached = SUMMARIES.get(key)
+
+    article_for_post = {
+        'heading':      (cached.get('title') if cached else None) or main_article.get('heading', ''),
+        'story':        (cached.get('body')  if cached else None) or main_article.get('story', ''),
+        'location':     (cached.get('location') if cached else None) or main_article.get('location', ''),
+        'source_count': 10,
+    }
+    image_url = (
+        AI_IMAGE_PUBLIC.get(key)
+        or main_article.get('image_url', '')
+        or main_article.get('top_image', '')
+    )
+
+    try:
+        from src.api_integrations.social_media_poster import generate_social_posts, generate_tv_script
+        posts     = generate_social_posts(article_for_post, article_url='', image_url=image_url)
+        tv_script = generate_tv_script(article_for_post, duration_seconds=59)
+    except Exception as e:
+        tb = traceback.format_exc()
+        app.logger.error('Social posts generation error: %s\n%s', e, tb)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    SOCIAL_POSTS[key] = {'posts': posts, 'image_url': image_url, 'tv_script': tv_script}
+    return jsonify({'status': 'success', 'posts': posts, 'image_url': image_url, 'tv_script': tv_script})
 
 
 @app.route('/api/articles/<int:idx>/preview-publish', methods=['POST'])
