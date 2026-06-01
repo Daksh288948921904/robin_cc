@@ -208,8 +208,9 @@ function applyFilters() {
     );
   }
 
-  if (SORT==='old')  list=[...list].sort((a,b)=>new Date(a.publish_date||0)-new Date(b.publish_date||0));
-  else if(SORT==='long') list=[...list].sort((a,b)=>wc(b)-wc(a));
+  if      (SORT==='new')  list=[...list].sort((a,b)=>new Date(b.publish_date||0)-new Date(a.publish_date||0));
+  else if (SORT==='old')  list=[...list].sort((a,b)=>new Date(a.publish_date||0)-new Date(b.publish_date||0));
+  else if (SORT==='long') list=[...list].sort((a,b)=>wc(b)-wc(a));
 
   SHOWN = list;
   renderFeed();
