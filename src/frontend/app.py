@@ -669,12 +669,13 @@ def publish_to_hocalwire(idx: int):
         )
 
         article_payload = {
-            'heading':   title,
-            'story':     body,
-            'image_url': image_url,
-            'language':  'en',
-            'location':  cached.get('location') or main_article.get('location', 'Hyderabad'),
-            'reporter':  cached.get('reporter', ''),
+            'heading':     title,
+            'sub_heading': cached.get('subtitle', ''),
+            'story':       body,
+            'image_url':   image_url,
+            'language':    'en',
+            'location':    cached.get('location') or main_article.get('location', 'Hyderabad'),
+            'reporter':    cached.get('reporter', ''),
         }
 
         success = upload_to_hocalwire(article_payload)
