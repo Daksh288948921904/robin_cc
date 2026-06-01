@@ -6,7 +6,8 @@
 let ALL     = [];        // raw articles from server
 let SHOWN   = [];        // filtered + sorted
 let CAT     = 'all';
-let SRC     = null;      // active source chip filter
+let SRC     = null;
+let COUNTRY = null;      // active country filter
 let Q       = '';
 let SORT    = 'new';
 let VIEW    = 'grid';    // 'grid' | 'list'
@@ -115,22 +116,78 @@ function refreshMeta(articles) {
   const srcs = new Set(articles.map(a=>a.source_name).filter(Boolean));
   setStatBump('s-sources', srcs.size||'—');
   setStatBump('s-updated', new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
-  buildSourceChips([...srcs], articles);
+  buildCountryList(articles);
 }
 
-function buildSourceChips(sources, articles) {
-  const freq = {};
-  (articles||ALL).forEach(a=>{ if(a.source_name) freq[a.source_name]=(freq[a.source_name]||0)+1; });
-  const wrap = $('sources-chips');
-  wrap.innerHTML = sources.slice(0,20).map(s=>`
-    <button class="source-chip${SRC===s?' active':''}" data-src="${esc(s)}">
-      ${esc(s)}<span class="source-chip-count">${freq[s]||''}</span>
-    </button>
-  `).join('');
-  wrap.querySelectorAll('.source-chip').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      SRC = SRC===btn.dataset.src ? null : btn.dataset.src;
-      wrap.querySelectorAll('.source-chip').forEach(b=>b.classList.toggle('active',b.dataset.src===SRC));
+function _extractCountry(a) {
+  // Articles use 'region' field (e.g. "USA", "UK", "India")
+  // Fall back to location/dateline for legacy/summary objects
+  const raw = (a.region || a.location || a.dateline || '').trim();
+  if (!raw) return null;
+  const parts = raw.split(',').map(p => p.trim()).filter(Boolean);
+  return (parts.length > 1 ? parts[parts.length - 1] : parts[0]).toUpperCase();
+}
+
+function _extractCity(a) {
+  const raw = (a.location || a.dateline || '').trim();
+  const parts = raw.split(',').map(p => p.trim()).filter(Boolean);
+  return parts.length > 1 ? parts[0].toUpperCase() : null;
+}
+
+function buildCountryList(articles) {
+  const wrap = $('cbar-inner');
+  if (!wrap) return;
+
+  // Count articles per country and city
+  const countryCounts = {};
+  const cityCounts = {};
+  (articles || ALL).forEach(a => {
+    const c = _extractCountry(a);
+    if (c) countryCounts[c] = (countryCounts[c] || 0) + 1;
+    const city = (a.city || '').trim();
+    if (city) cityCounts[city] = (cityCounts[city] || 0) + 1;
+  });
+
+  const sorted = Object.entries(countryCounts).sort((a, b) => b[1] - a[1]);
+  const topCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]).slice(0, 2);
+  const toTitle = s => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+
+  // "All" chip
+  let html = `<button class="cbar-chip${!COUNTRY ? ' active' : ''}" data-country="">
+    <span class="cbar-chip-label">🌍 All</span>
+  </button>`;
+
+  // Top-2 city chips (if any) with divider
+  if (topCities.length) {
+    html += `<div class="cbar-divider"></div>`;
+    html += topCities.map(([city]) => `
+      <button class="cbar-chip cbar-city${COUNTRY === city ? ' active' : ''}" data-country="${esc(city)}" title="Top city">
+        <span class="cbar-chip-label">📍 ${esc(toTitle(city))}</span>
+        <span class="cbar-chip-count">${cityCounts[city]}</span>
+      </button>`).join('');
+    html += `<div class="cbar-divider"></div>`;
+  }
+
+  // Country chips sorted by count
+  html += sorted.map(([country, count]) => `
+    <button class="cbar-chip${COUNTRY === country ? ' active' : ''}" data-country="${esc(country)}">
+      <span class="cbar-chip-label">${esc(toTitle(country))}</span>
+      <span class="cbar-chip-count">${count}</span>
+    </button>`).join('');
+
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll('.cbar-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const val = btn.dataset.country;
+      COUNTRY = (COUNTRY === val || val === '') ? null : val;
+      wrap.querySelectorAll('.cbar-chip').forEach(b =>
+        b.classList.toggle('active', b.dataset.country === (COUNTRY || '')));
+      if (COUNTRY) {
+        document.querySelectorAll('#nav-list .nav-btn').forEach(b => b.classList.remove('active'));
+        $('nav-list').querySelector('[data-cat="all"]').classList.add('active');
+        CAT = 'all';
+      }
       applyFilters();
     });
   });
@@ -141,7 +198,7 @@ function applyFilters() {
   let list = ALL;
 
   if (CAT !== 'all') list = list.filter(a=>catOf(a).key===CAT);
-  if (SRC)           list = list.filter(a=>a.source_name===SRC);
+  if (COUNTRY)       list = list.filter(a=>_extractCountry(a)===COUNTRY);
   if (Q) {
     const q=Q.toLowerCase();
     list = list.filter(a=>
@@ -644,8 +701,6 @@ async function generateSummary(realIdx) {
     $('summary-section').innerHTML = `
       <div class="summary-result">
         <div class="sum-masthead">
-          <span class="sum-masthead-brand">robin cc</span>
-          <span class="sum-masthead-sep">·</span>
           <span class="sum-masthead-date">${esc(bylineDate)}</span>
         </div>
         ${locationStr ? `<div class="sum-location"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><circle cx="5.5" cy="4.5" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 1C3.57 1 2 2.57 2 4.5c0 2.72 3.5 5.5 3.5 5.5s3.5-2.78 3.5-5.5C9 2.57 7.43 1 5.5 1z" stroke="currentColor" stroke-width="1.2"/></svg>${esc(locationStr)}</div>` : ''}
@@ -1605,9 +1660,10 @@ sortEl.addEventListener('change',e=>{SORT=e.target.value;applyFilters();});
 // Category nav
 $('nav-list').addEventListener('click',e=>{
   const btn=e.target.closest('.nav-btn');if(!btn)return;
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#nav-list .nav-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  CAT=btn.dataset.cat;SRC=null;
+  CAT=btn.dataset.cat; SRC=null; COUNTRY=null;
+  $('cbar-inner')?.querySelectorAll('.cbar-chip').forEach(b=>b.classList.toggle('active',b.dataset.country===''));
   applyFilters();
   if(window.innerWidth<=900) closeSidebar();
 });

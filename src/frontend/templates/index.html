@@ -72,10 +72,6 @@
       <li><button class="nav-btn" data-cat="sports"><span class="nav-btn-icon">🏆</span>Sports<span class="nav-count" id="cnt-sports">0</span></button></li>
     </ul>
 
-    <div class="sidebar-divider"></div>
-    <div class="sidebar-section-label">Sources</div>
-    <div class="sources-chips" id="sources-chips"></div>
-
     <div class="sidebar-bottom">
       <div class="live-status">
         <span class="pulse-ring"></span>
@@ -144,6 +140,15 @@
         </div>
       </div>
     </header>
+
+    <!-- Countries bar -->
+    <div class="cbar" id="cbar">
+      <div class="cbar-inner" id="cbar-inner">
+        <button class="cbar-chip active" data-country="">
+          <span class="cbar-chip-label">🌍 All</span>
+        </button>
+      </div>
+    </div>
 
     <!-- Ticker -->
     <div class="ticker" id="ticker">
@@ -277,7 +282,7 @@
       <section class="reader-section summary-wrap">
         <div class="reader-section-label">
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3h9M2 6.5h6M2 10h7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-          AI Synthesis
+          DNL Briefing
         </div>
         <div id="summary-section"></div>
       </section>

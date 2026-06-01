@@ -21,7 +21,8 @@
 - Example: 3 articles about "Greenland" → 1 trend cluster
 - **NO copying yet** - just organizing
 
-### STEP 3: **AI SYNTHESIS** (This is the key!)
+### STEP 3: **
+** (This is the key!)
 **What happens**: Uses **Llama 3 70B model (via Groq API)** to:
 1. Read ALL source articles about a topic
 2. **SYNTHESIZE** them into ONE completely new article

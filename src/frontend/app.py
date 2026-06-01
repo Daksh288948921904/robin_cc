@@ -43,6 +43,9 @@ _USERS = {
     'Sudipta@Robin.cc': (
         'scrypt:32768:8:1$9BfAFr55acq3FBJE$4a0e5a6c8f7faf992a5ab6f3c01537ffcde0a83a9928fdb390c83eb33e9a21e828ccf54f312de0cedb392ff9cd07137e1305b97ab88f38e4473890db054c9f7f'
     ),
+    'Pankaj@Robin.cc': (
+        'scrypt:32768:8:1$q6pdvdgyB5Cn7UMw$35229e09e483cdf1367be4f05c895d11cdfdb71538c150eba201cc89a23d8db5940e794747c1c386dc11d9e62f6070f7ce4539745f4fbbb0e0b1b1b257bbaac0'
+    ),
 }
 
 def login_required(f):
@@ -179,6 +182,12 @@ def _run_scrape(max_articles: int):
             max_per_source=6,
             max_workers=12,
         )
+
+        try:
+            from src.utils.country_resolver import enrich_articles
+            enrich_articles(articles)
+        except Exception as _ce:
+            app.logger.warning("Country enrichment failed: %s", _ce)
 
         with _scrape_lock:
             SCRAPED_ARTICLES = articles
@@ -334,6 +343,12 @@ def load_from_json():
         with open(filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
             SCRAPED_ARTICLES = data.get('articles', data)
+
+        try:
+            from src.utils.country_resolver import enrich_articles
+            enrich_articles(SCRAPED_ARTICLES)
+        except Exception as _ce:
+            app.logger.warning("Country enrichment failed: %s", _ce)
 
         return jsonify({
             'status': 'success',
