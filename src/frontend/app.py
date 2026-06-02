@@ -527,7 +527,7 @@ def generate_social_posts_route(idx: int):
     key = str(idx)
     if key in SOCIAL_POSTS:
         cached_sp = SOCIAL_POSTS[key]
-        return jsonify({'status': 'success', 'posts': cached_sp['posts'], 'image_url': cached_sp.get('image_url', ''), 'tv_script': cached_sp.get('tv_script', '')})
+        return jsonify({'status': 'success', 'posts': cached_sp['posts'], 'image_url': cached_sp.get('image_url', ''), 'tv_script': cached_sp.get('tv_script', ''), 'podcast_script': cached_sp.get('podcast_script', '')})
 
     main_article = SCRAPED_ARTICLES[idx]
     cached = SUMMARIES.get(key)
@@ -545,16 +545,17 @@ def generate_social_posts_route(idx: int):
     )
 
     try:
-        from src.api_integrations.social_media_poster import generate_social_posts, generate_tv_script
-        posts     = generate_social_posts(article_for_post, article_url='', image_url=image_url)
-        tv_script = generate_tv_script(article_for_post, duration_seconds=59)
+        from src.api_integrations.social_media_poster import generate_social_posts, generate_tv_script, generate_podcast_script
+        posts           = generate_social_posts(article_for_post, article_url='', image_url=image_url)
+        tv_script       = generate_tv_script(article_for_post, duration_seconds=120)
+        podcast_script  = generate_podcast_script(article_for_post, duration_seconds=60)
     except Exception as e:
         tb = traceback.format_exc()
         app.logger.error('Social posts generation error: %s\n%s', e, tb)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-    SOCIAL_POSTS[key] = {'posts': posts, 'image_url': image_url, 'tv_script': tv_script}
-    return jsonify({'status': 'success', 'posts': posts, 'image_url': image_url, 'tv_script': tv_script})
+    SOCIAL_POSTS[key] = {'posts': posts, 'image_url': image_url, 'tv_script': tv_script, 'podcast_script': podcast_script}
+    return jsonify({'status': 'success', 'posts': posts, 'image_url': image_url, 'tv_script': tv_script, 'podcast_script': podcast_script})
 
 
 @app.route('/api/articles/<int:idx>/preview-publish', methods=['POST'])
@@ -942,7 +943,135 @@ def trigger_video_workflow(idx: int):
     }), 502
 
 
-def _record_activity(key: str, article: dict, *, published_hocalwire=False, video_sent=False):
+RIG_SERVER_URL = os.environ.get('RIG_SERVER_URL', 'http://localhost:8000')
+
+def _clean_script_for_tts(text: str, script_type: str = 'tv') -> str:
+    """Strip production markers from a script before sending to TTS."""
+    import re
+    # Remove word/time metadata footer
+    text = re.sub(r'\[WORDS:\s*\d+\]\s*\[TIME:\s*~?\d+s?\]', '', text)
+    if script_type == 'podcast':
+        # Remove jingle cue lines entirely
+        text = re.sub(r'\[JINGLE:[^\]]*\]\s*\n?', '', text)
+        # Remove section header lines
+        text = re.sub(r'^\[(HEADLINE|TEASER|SUMMARY|SIGN-OFF)\]\s*$', '', text, flags=re.MULTILINE)
+    # Replace breath-pause markers with a comma pause
+    text = text.replace('//', ',')
+    return text.strip()
+
+
+@app.route('/api/articles/<int:idx>/generate-audio', methods=['POST'])
+@login_required
+def generate_audio(idx: int):
+    """
+    Generate TTS audio for a TV script or podcast script via the Rig TTS server.
+
+    Body (JSON):
+      { "script_type": "tv" | "podcast" }
+
+    Returns the WAV audio bytes directly (Content-Type: audio/wav).
+    """
+    import requests as _req
+
+    if idx < 0 or idx >= len(SCRAPED_ARTICLES):
+        return jsonify({'error': 'Article not found'}), 404
+
+    body       = request.get_json(silent=True) or {}
+    script_type = body.get('script_type', 'tv')
+
+    key = str(idx)
+    cached = SOCIAL_POSTS.get(key, {})
+    if script_type == 'tv':
+        raw_script  = cached.get('tv_script', '')
+        profile_id  = 'anchor_male_en'
+    else:
+        raw_script  = cached.get('podcast_script', '')
+        profile_id  = 'anchor_male_en'
+
+    if not raw_script:
+        return jsonify({'error': 'No script generated yet — open the script modal first'}), 404
+
+    clean_text = _clean_script_for_tts(raw_script, script_type)
+
+    try:
+        resp = _req.post(
+            f'{RIG_SERVER_URL}/generate',
+            json={'text': clean_text, 'profile_id': profile_id, 'allow_draft_fallback': True},
+            timeout=90,
+        )
+    except Exception as e:
+        app.logger.error('Rig TTS server unreachable: %s', e)
+        return jsonify({'error': f'TTS server unreachable: {e}'}), 503
+
+    if resp.status_code != 200:
+        app.logger.error('Rig /generate returned %s: %s', resp.status_code, resp.text[:200])
+        return jsonify({'error': f'TTS server error {resp.status_code}'}), 502
+
+    from flask import Response as _Response
+    return _Response(
+        resp.content,
+        content_type='audio/wav',
+        headers={'Content-Disposition': f'inline; filename="script_{script_type}_{idx}.wav"'},
+    )
+
+
+@app.route('/api/articles/<int:idx>/send-to-inbox', methods=['POST'])
+@login_required
+def send_to_inbox(idx: int):
+    """
+    Submit a TV or podcast script to the Rig Studio intake queue.
+
+    Body (JSON):
+      { "script_type": "tv" | "podcast" }
+    """
+    import requests as _req
+
+    if idx < 0 or idx >= len(SCRAPED_ARTICLES):
+        return jsonify({'error': 'Article not found'}), 404
+
+    body        = request.get_json(silent=True) or {}
+    script_type = body.get('script_type', 'tv')
+
+    key    = str(idx)
+    cached = SOCIAL_POSTS.get(key, {})
+    article = SCRAPED_ARTICLES[idx]
+    title   = article.get('heading', 'Untitled')
+
+    if script_type == 'tv':
+        raw_script = cached.get('tv_script', '')
+    else:
+        raw_script = cached.get('podcast_script', '')
+
+    if not raw_script:
+        return jsonify({'error': 'No script generated yet — open the script modal first'}), 404
+
+    try:
+        resp = _req.post(
+            f'{RIG_SERVER_URL}/intake',
+            json={
+                'script_type': script_type,
+                'title':       title,
+                'script_text': raw_script,
+                'article_idx': idx,
+            },
+            timeout=10,
+        )
+    except Exception as e:
+        app.logger.error('Rig intake unreachable: %s', e)
+        return jsonify({'error': f'Rig Studio unreachable: {e}'}), 503
+
+    if resp.status_code != 200:
+        app.logger.error('Rig /intake returned %s', resp.status_code)
+        return jsonify({'error': f'Rig Studio error {resp.status_code}'}), 502
+
+    _record_activity(key, article,
+                     tv_sent=(script_type == 'tv'),
+                     radio_sent=(script_type != 'tv'))
+    return jsonify({'status': 'ok', 'item': resp.json()})
+
+
+def _record_activity(key: str, article: dict, *, published_hocalwire=False,
+                     video_sent=False, tv_sent=False, radio_sent=False):
     """Upsert an activity entry for the given article index key."""
     entry = ACTIVITY.setdefault(key, {
         'headline':            article.get('heading', 'Untitled'),
@@ -951,6 +1080,10 @@ def _record_activity(key: str, article: dict, *, published_hocalwire=False, vide
         'published_at':        None,
         'video_sent':          False,
         'video_sent_at':       None,
+        'tv_sent':             False,
+        'tv_sent_at':          None,
+        'radio_sent':          False,
+        'radio_sent_at':       None,
     })
     now = datetime.now().isoformat()
     if published_hocalwire:
@@ -959,6 +1092,12 @@ def _record_activity(key: str, article: dict, *, published_hocalwire=False, vide
     if video_sent:
         entry['video_sent']    = True
         entry['video_sent_at'] = now
+    if tv_sent:
+        entry['tv_sent']    = True
+        entry['tv_sent_at'] = now
+    if radio_sent:
+        entry['radio_sent']    = True
+        entry['radio_sent_at'] = now
 
 
 @app.route('/api/activity')
@@ -969,8 +1108,10 @@ def get_activity():
         {'idx': k, **v}
         for k, v in ACTIVITY.items()
         if v.get('published_hocalwire') or v.get('video_sent')
+           or v.get('tv_sent') or v.get('radio_sent')
     ]
-    items.sort(key=lambda x: x.get('published_at') or x.get('video_sent_at') or '', reverse=True)
+    items.sort(key=lambda x: x.get('published_at') or x.get('video_sent_at')
+               or x.get('tv_sent_at') or x.get('radio_sent_at') or '', reverse=True)
     return jsonify({'status': 'success', 'count': len(items), 'activity': items})
 
 
@@ -984,8 +1125,12 @@ def get_article_status(idx: int):
         'status':              'success',
         'published_hocalwire': entry.get('published_hocalwire', False),
         'video_sent':          entry.get('video_sent', False),
+        'tv_sent':             entry.get('tv_sent', False),
+        'radio_sent':          entry.get('radio_sent', False),
         'published_at':        entry.get('published_at'),
         'video_sent_at':       entry.get('video_sent_at'),
+        'tv_sent_at':          entry.get('tv_sent_at'),
+        'radio_sent_at':       entry.get('radio_sent_at'),
     })
 
 

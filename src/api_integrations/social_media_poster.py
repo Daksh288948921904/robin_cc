@@ -305,6 +305,114 @@ def _generate_tv_script_template(
 
 
 # ===========================================
+# PODCAST / RADIO BULLETIN SCRIPT GENERATION
+# ===========================================
+
+def generate_podcast_script(
+    article: Dict,
+    host_name: str = "Rohit Gandhi",
+    duration_seconds: int = 60,
+) -> str:
+    """
+    Generate a radio bulletin script (~60 seconds / ~150 words).
+    Falls back to template if LLM fails.
+    """
+    title    = article.get('heading', 'Breaking News')
+    dateline = article.get('dateline', article.get('location', 'NEW DELHI'))
+    story    = (article.get('story', '') or '')[:3000]
+
+    try:
+        script = _generate_podcast_script_with_llm(title, dateline, story, host_name, duration_seconds)
+        logger.info(f"AI podcast script generated: {len(script.split())} words")
+        return script
+    except Exception as e:
+        logger.warning(f"LLM podcast script failed ({e}), using template")
+        return _generate_podcast_script_template(title, story, host_name, duration_seconds)
+
+
+def _generate_podcast_script_with_llm(
+    title: str,
+    dateline: str,
+    story: str,
+    host_name: str,
+    duration_seconds: int,
+) -> str:
+    model        = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    client       = _get_groq_client()
+    target_words = int(duration_seconds * 150 / 60)
+
+    prompt = f"""You are a professional radio news anchor for Robin CC News, an AI-powered global news platform.
+
+Write a complete radio news bulletin script — {duration_seconds} seconds when read aloud (~{target_words} words at 150 WPM).
+A single host reads it on-air. This is a full broadcast-quality script.
+
+STORY HEADLINE: {title}
+DATELINE: {dateline}
+HOST: {host_name}
+
+ARTICLE CONTENT:
+{story[:2000]}
+
+USE EXACTLY THESE SECTION MARKERS (keep them — they drive audio production):
+[JINGLE: INTRO]
+[HEADLINE]
+[TEASER]
+[SUMMARY]
+[SIGN-OFF]
+[JINGLE: OUTRO]
+
+RULES:
+- [JINGLE: INTRO]: "Welcome to Robin CC News. I'm {host_name}." (exactly this line)
+- [HEADLINE]: 1 punchy spoken headline sentence (8-12 words)
+- [TEASER]: 2-3 sentences — hook the listener with the most dramatic/important fact
+- [SUMMARY]: 4-6 sentences — cover who, what, where, when, why with context and impact
+- [SIGN-OFF]: "That's the story. Stay informed with Robin CC News. I'm {host_name}." (exactly this)
+- Use short sentences throughout — this is spoken audio
+- No markdown, no bullet points, no asterisks
+- Total spoken words across all sections: {target_words} words
+- End with: [WORDS: X] [TIME: ~{duration_seconds}s]
+
+Write the complete script now:"""
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=600,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _generate_podcast_script_template(
+    title: str,
+    story: str,
+    host_name: str,
+    duration_seconds: int,
+) -> str:
+    """Template fallback for podcast script generation."""
+    paragraphs = [l.strip() for l in story.split('\n') if l.strip() and not l.strip().startswith('#')]
+    teaser  = paragraphs[0][:200] if paragraphs else "Details are emerging from the ground."
+    summary = ' '.join(paragraphs[1:4])[:400] if len(paragraphs) > 1 else teaser
+
+    script = (
+        f"[JINGLE: INTRO]\n"
+        f"Welcome to Robin CC News. I'm {host_name}.\n\n"
+        f"[HEADLINE]\n"
+        f"{title}\n\n"
+        f"[TEASER]\n"
+        f"{teaser}\n\n"
+        f"[SUMMARY]\n"
+        f"{summary}\n\n"
+        f"[SIGN-OFF]\n"
+        f"That's the story. Stay informed with Robin CC News. I'm {host_name}.\n"
+        f"[JINGLE: OUTRO]\n"
+    )
+    words = len(script.split())
+    script += f"\n[WORDS: {words}] [TIME: ~{duration_seconds}s]"
+    return script
+
+
+# ===========================================
 # HASHTAG GENERATION
 # ===========================================
 

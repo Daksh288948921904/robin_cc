@@ -221,6 +221,8 @@
                 <th class="at-col-source">Source</th>
                 <th class="at-col-status">Hocalwire</th>
                 <th class="at-col-status">Video</th>
+                <th class="at-col-status">TV Script</th>
+                <th class="at-col-status">Radio</th>
                 <th class="at-col-time">Last action</th>
               </tr>
             </thead>
@@ -320,13 +322,17 @@
           <span id="publish-label">Publish to Hocalwire</span>
           <span class="publish-spinner hidden" id="publish-spinner"></span>
         </button>
-        <button class="video-btn" id="video-btn" onclick="openVideoModal()">
+        <button class="video-btn" id="video-btn" onclick="openTVScriptPreview()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
           Video
         </button>
         <button class="social-post-btn" id="social-post-btn" onclick="openSocialPostModal()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></svg>
           Social
+        </button>
+        <button class="podcast-btn" id="podcast-btn" onclick="openPodcastPreview()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          Podcast
         </button>
         <button class="reader-json-btn" onclick="toggleRawJson()">{ } Raw JSON</button>
         <pre class="reader-raw hidden" id="reader-raw"></pre>
@@ -424,6 +430,97 @@
   </div>
 </div>
 
+<!-- ░░ TV SCRIPT MODAL ░░ -->
+<div class="script-modal-overlay" id="tv-modal-overlay" onclick="closeTVModal(event)">
+  <div class="script-modal script-modal--tv" role="dialog" aria-modal="true">
+    <div class="script-modal-header script-modal-header--tv">
+      <div class="script-modal-title-row">
+        <div class="script-modal-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
+        </div>
+        <span class="script-modal-label">TV SCRIPT</span>
+        <span class="script-modal-sub">TELEPROMPTER</span>
+        <span class="script-modal-brand script-modal-brand--tv">robin cc</span>
+        <span class="script-live-badge">● LIVE</span>
+      </div>
+      <div class="script-modal-meta-row">
+        <span class="script-modal-meta" id="tv-modal-meta">~2m · 300 words · 150 WPM</span>
+        <button class="script-modal-close" onclick="closeTVModal()" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="script-modal-loading hidden" id="tv-modal-loading">
+      <span class="cov-spinner"></span>
+      <span>Generating TV script…</span>
+    </div>
+    <textarea class="script-modal-textarea script-modal-textarea--tv" id="tv-script-textarea" placeholder="Generating teleprompter script…" spellcheck="false"></textarea>
+    <div class="script-audio-player hidden" id="tv-audio-player">
+      <audio id="tv-audio-el" controls></audio>
+      <span class="script-audio-label" id="tv-audio-label">▶ TV Script Audio — Draft (Edge TTS)</span>
+    </div>
+    <div class="script-modal-footer">
+      <button class="script-regen-btn" onclick="regenTVScript()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Regenerate
+      </button>
+      <button class="script-copy-btn" onclick="copyTVScript()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy Script
+      </button>
+      <button class="script-send-btn script-send-btn--tv" id="tv-gen-audio-btn" onclick="generateTVAudio()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        <span id="tv-gen-audio-label">Send to Inbox</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ░░ RADIO BULLETIN MODAL ░░ -->
+<div class="script-modal-overlay" id="radio-modal-overlay" onclick="closeRadioModal(event)">
+  <div class="script-modal script-modal--radio" role="dialog" aria-modal="true">
+    <div class="script-modal-header script-modal-header--radio">
+      <div class="script-modal-title-row">
+        <div class="script-modal-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </div>
+        <span class="script-modal-label">RADIO BULLETIN</span>
+        <span class="script-modal-brand script-modal-brand--radio">robin cc</span>
+        <span class="script-onair-badge">● ON AIR</span>
+      </div>
+      <div class="script-modal-meta-row">
+        <span class="script-modal-meta" id="radio-modal-meta">~60s · 150 words</span>
+        <button class="script-modal-close" onclick="closeRadioModal()" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="script-modal-loading hidden" id="radio-modal-loading">
+      <span class="cov-spinner"></span>
+      <span>Generating radio bulletin…</span>
+    </div>
+    <textarea class="script-modal-textarea script-modal-textarea--radio" id="radio-script-textarea" placeholder="Generating radio bulletin script…" spellcheck="false"></textarea>
+    <div class="script-audio-player hidden" id="radio-audio-player">
+      <audio id="radio-audio-el" controls></audio>
+      <span class="script-audio-label" id="radio-audio-label">▶ Radio Bulletin Audio — Draft (Edge TTS)</span>
+    </div>
+    <div class="script-modal-footer">
+      <button class="script-regen-btn" onclick="regenRadioScript()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Regenerate
+      </button>
+      <button class="script-copy-btn" onclick="copyRadioScript()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy Script
+      </button>
+      <button class="script-send-btn script-send-btn--radio" id="radio-gen-audio-btn" onclick="generateRadioAudio()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        <span id="radio-gen-audio-label">Send to Inbox</span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- ░░ SOCIAL POST PREVIEW MODAL ░░ -->
 <div class="smodal-overlay" id="smodal-overlay" onclick="closeSocialPostModal(event)">
   <div class="smodal" role="dialog" aria-modal="true" aria-labelledby="smodal-title">
@@ -458,10 +555,6 @@
       <button class="smodal-tab" id="stab-linkedin" onclick="switchSocialTab('linkedin')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
         LinkedIn
-      </button>
-      <button class="smodal-tab" id="stab-tv" onclick="switchSocialTab('tv')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
-        TV Script
       </button>
     </div>
 
@@ -589,25 +682,6 @@
               <span class="sp-li-action"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Comment</span>
               <span class="sp-li-action"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg> Repost</span>
               <span class="sp-li-action"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <!-- TV Script -->
-      <div class="smodal-pane" id="spane-tv">
-        <div class="sp-phone-frame">
-          <div class="sp-card sp-tv">
-            <div class="sp-tv-header">
-              <div class="sp-tv-logo">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
-                TELEPROMPTER
-              </div>
-              <span class="sp-tv-channel">robin cc</span>
-            </div>
-            <div class="sp-tv-body" id="sp-tv-text">…</div>
-            <div class="sp-tv-footer">
-              <span class="sp-tv-meta" id="sp-tv-meta">~59s · 150 WPM</span>
-              <span class="sp-tv-live">● LIVE</span>
             </div>
           </div>
         </div>

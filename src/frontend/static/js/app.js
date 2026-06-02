@@ -457,7 +457,8 @@ function updatePublishedAlert(realIdx) {
   if (!alertEl) return;
 
   const entry = realIdx >= 0 ? ACTIVITY_MAP[realIdx] : null;
-  if (!entry || (!entry.published_hocalwire && !entry.video_sent)) {
+  const anyAction = entry && (entry.published_hocalwire || entry.video_sent || entry.tv_sent || entry.radio_sent);
+  if (!anyAction) {
     alertEl.classList.add('hidden');
     return;
   }
@@ -465,11 +466,15 @@ function updatePublishedAlert(realIdx) {
   const parts = [];
   if (entry.published_hocalwire) parts.push('Hocalwire');
   if (entry.video_sent)          parts.push('Video Workflow');
+  if (entry.tv_sent)             parts.push('TV Script');
+  if (entry.radio_sent)          parts.push('Radio Bulletin');
   textEl.textContent = `Already pushed to: ${parts.join(' & ')}`;
 
   tagsEl.innerHTML = [
-    entry.published_hocalwire ? `<span class="pa-tag hocalwire">Hocalwire</span>` : '',
-    entry.video_sent          ? `<span class="pa-tag video">Video</span>` : '',
+    entry.published_hocalwire ? `<span class="pa-tag hocalwire">Hocalwire</span>`      : '',
+    entry.video_sent          ? `<span class="pa-tag video">Video</span>`               : '',
+    entry.tv_sent             ? `<span class="pa-tag tv">TV Script</span>`              : '',
+    entry.radio_sent          ? `<span class="pa-tag radio">Radio</span>`               : '',
   ].join('');
 
   alertEl.classList.remove('hidden');
@@ -1050,10 +1055,11 @@ async function sendVideoWorkflow() {
 }
 
 // ── Social Post Preview ───────────────────────────────────────
-let _socialPostsCache  = {};      // realIdx → {twitter, instagram, facebook, linkedin}
-let _socialImageCache  = {};      // realIdx → image URL
-let _socialTvCache     = {};      // realIdx → tv script string
-let _activeSocialTab   = 'instagram';
+let _socialPostsCache    = {};      // realIdx → {twitter, instagram, facebook, linkedin}
+let _socialImageCache    = {};      // realIdx → image URL
+let _socialTvCache       = {};      // realIdx → tv script string
+let _socialPodcastCache  = {};      // realIdx → podcast/radio script string
+let _activeSocialTab     = 'instagram';
 
 function openSocialPostModal() {
   const realIdx = CURRENT_REAL_IDX;
@@ -1061,9 +1067,178 @@ function openSocialPostModal() {
   $('smodal-overlay').classList.add('open');
   switchSocialTab(_activeSocialTab);
   if (_socialPostsCache[realIdx]) {
-    _renderSocialPosts(_socialPostsCache[realIdx], _socialImageCache[realIdx] || '', _socialTvCache[realIdx] || '');
+    _renderSocialPosts(_socialPostsCache[realIdx], _socialImageCache[realIdx] || '');
   } else {
     _fetchSocialPosts(realIdx);
+  }
+}
+
+// ── TV Script Modal ───────────────────────────────
+function openTVScriptPreview() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) { toast('err', 'Open an article first'); return; }
+  $('tv-modal-overlay').classList.add('open');
+  if (_socialTvCache[realIdx]) {
+    _renderTVModal(_socialTvCache[realIdx]);
+  } else {
+    _fetchAndRenderScripts(realIdx, 'tv');
+  }
+}
+
+function closeTVModal(e) {
+  if (e && e.target !== $('tv-modal-overlay')) return;
+  $('tv-modal-overlay').classList.remove('open');
+}
+
+function _renderTVModal(script) {
+  const ta = $('tv-script-textarea');
+  if (!ta || !script) return;
+  ta.value = script.replace(/\[WORDS:\s*\d+\]\s*\[TIME:\s*~?\d+s\]\s*$/, '').trim();
+  const meta = $('tv-modal-meta');
+  if (meta) {
+    const wMatch = script.match(/\[WORDS:\s*(\d+)\]/);
+    const tMatch = script.match(/\[TIME:\s*~?(\d+)s\]/);
+    if (wMatch && tMatch) {
+      const mins = Math.floor(parseInt(tMatch[1]) / 60);
+      const secs = parseInt(tMatch[1]) % 60;
+      meta.textContent = `${mins > 0 ? mins + 'm ' : ''}${secs > 0 ? secs + 's · ' : ''}${wMatch[1]} words · 150 WPM`;
+    }
+  }
+}
+
+function copyTVScript() {
+  const ta = $('tv-script-textarea');
+  const text = ta ? ta.value : (_socialTvCache[CURRENT_REAL_IDX] || '');
+  if (!text) { toast('err', 'No script to copy'); return; }
+  navigator.clipboard.writeText(text).then(
+    () => toast('ok', 'TV script copied'),
+    () => toast('err', 'Clipboard write failed')
+  );
+}
+
+async function regenTVScript() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) return;
+  delete _socialPostsCache[realIdx];
+  delete _socialTvCache[realIdx];
+  delete _socialPodcastCache[realIdx];
+  delete _socialImageCache[realIdx];
+  await _fetchAndRenderScripts(realIdx, 'tv');
+}
+
+// ── Radio Modal ───────────────────────────────────
+function openPodcastPreview() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) { toast('err', 'Open an article first'); return; }
+  $('radio-modal-overlay').classList.add('open');
+  if (_socialPodcastCache[realIdx]) {
+    _renderRadioModal(_socialPodcastCache[realIdx]);
+  } else {
+    _fetchAndRenderScripts(realIdx, 'radio');
+  }
+}
+
+function closeRadioModal(e) {
+  if (e && e.target !== $('radio-modal-overlay')) return;
+  $('radio-modal-overlay').classList.remove('open');
+}
+
+function _renderRadioModal(script) {
+  const ta = $('radio-script-textarea');
+  if (!ta || !script) return;
+  ta.value = script.replace(/\[WORDS:\s*\d+\]\s*\[TIME:\s*~?\d+s\]\s*$/, '').trim();
+  const meta = $('radio-modal-meta');
+  if (meta) {
+    const wMatch = script.match(/\[WORDS:\s*(\d+)\]/);
+    const tMatch = script.match(/\[TIME:\s*~?(\d+)s\]/);
+    if (wMatch && tMatch) meta.textContent = `~${tMatch[1]}s · ${wMatch[1]} words`;
+  }
+}
+
+function copyRadioScript() {
+  const ta = $('radio-script-textarea');
+  const text = ta ? ta.value : (_socialPodcastCache[CURRENT_REAL_IDX] || '');
+  if (!text) { toast('err', 'No script to copy'); return; }
+  navigator.clipboard.writeText(text).then(
+    () => toast('ok', 'Radio script copied'),
+    () => toast('err', 'Clipboard write failed')
+  );
+}
+
+async function regenRadioScript() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) return;
+  delete _socialPostsCache[realIdx];
+  delete _socialTvCache[realIdx];
+  delete _socialPodcastCache[realIdx];
+  delete _socialImageCache[realIdx];
+  await _fetchAndRenderScripts(realIdx, 'radio');
+}
+
+// ── Audio generation (Rig TTS server) ─────────────
+async function _sendToInbox(scriptType) {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) { toast('err', 'No article selected'); return; }
+
+  const isTv    = scriptType === 'tv';
+  const btnId   = isTv ? 'tv-gen-audio-btn'   : 'radio-gen-audio-btn';
+  const labelId = isTv ? 'tv-gen-audio-label' : 'radio-gen-audio-label';
+  const btn     = $(btnId);
+  const label   = $(labelId);
+
+  btn.disabled = true;
+  label.textContent = 'Sending…';
+
+  try {
+    const res  = await fetch(`/api/articles/${realIdx}/send-to-inbox`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ script_type: scriptType }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      toast('ok', `Script sent to Rig Studio inbox — open localhost:3000/inbox to review`);
+      recordActivity(realIdx, { [`${scriptType === 'tv' ? 'tv' : 'radio'}_sent`]: true });
+      updatePublishedAlert(realIdx);
+      refreshActivityCount();
+    } else {
+      toast('err', data.error || `Failed to send (${res.status})`);
+    }
+  } catch(e) {
+    toast('err', `Send error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    label.textContent = 'Send to Inbox';
+  }
+}
+
+function generateTVAudio()    { _sendToInbox('tv'); }
+function generateRadioAudio() { _sendToInbox('podcast'); }
+
+// ── Shared fetch for TV + Radio modals ───────────
+async function _fetchAndRenderScripts(realIdx, target) {
+  const loadingId = target === 'tv' ? 'tv-modal-loading' : 'radio-modal-loading';
+  const loadingEl = $(loadingId);
+  if (loadingEl) loadingEl.classList.remove('hidden');
+
+  try {
+    const res  = await fetch(`/api/articles/${realIdx}/social-posts`, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'success') {
+      if (data.posts) _socialPostsCache[realIdx] = data.posts;
+      const imageToUse = SELECTED_IMAGE || data.image_url || '';
+      _socialImageCache[realIdx]   = imageToUse;
+      _socialTvCache[realIdx]      = data.tv_script      || '';
+      _socialPodcastCache[realIdx] = data.podcast_script || '';
+      if (target === 'tv')    _renderTVModal(_socialTvCache[realIdx]);
+      if (target === 'radio') _renderRadioModal(_socialPodcastCache[realIdx]);
+    } else {
+      toast('err', data.message || 'Generation failed');
+    }
+  } catch(e) {
+    toast('err', `Network error: ${e.message}`);
+  } finally {
+    if (loadingEl) loadingEl.classList.add('hidden');
   }
 }
 
@@ -1074,7 +1249,7 @@ function closeSocialPostModal(e) {
 
 function switchSocialTab(platform) {
   _activeSocialTab = platform;
-  ['instagram','twitter','facebook','linkedin','tv'].forEach(p => {
+  ['instagram','twitter','facebook','linkedin'].forEach(p => {
     $('stab-' + p).classList.toggle('active', p === platform);
     $('spane-' + p).classList.toggle('active', p === platform);
   });
@@ -1083,7 +1258,6 @@ function switchSocialTab(platform) {
 async function _fetchSocialPosts(realIdx) {
   const loading = $('smodal-loading');
   loading.classList.remove('hidden');
-  // Clear all text placeholders
   ['sp-ig-text','sp-tw-text','sp-fb-text','sp-li-text'].forEach(id => {
     const el = $(id);
     if (el) { if (id === 'sp-ig-text') { const body = el.querySelector('.sp-ig-caption-body'); if (body) body.textContent = '…'; } else el.textContent = '…'; }
@@ -1093,12 +1267,12 @@ async function _fetchSocialPosts(realIdx) {
     const res  = await fetch(`/api/articles/${realIdx}/social-posts`, { method: 'POST' });
     const data = await res.json();
     if (data.status === 'success' && data.posts) {
-      _socialPostsCache[realIdx] = data.posts;
-      // Prefer the user's picker selection over what the backend returned
+      _socialPostsCache[realIdx]   = data.posts;
       const imageToUse = SELECTED_IMAGE || data.image_url || '';
-      _socialImageCache[realIdx] = imageToUse;
-      _socialTvCache[realIdx]    = data.tv_script  || '';
-      _renderSocialPosts(data.posts, imageToUse, data.tv_script || '');
+      _socialImageCache[realIdx]   = imageToUse;
+      _socialTvCache[realIdx]      = data.tv_script      || '';
+      _socialPodcastCache[realIdx] = data.podcast_script || '';
+      _renderSocialPosts(data.posts, imageToUse);
     } else {
       toast('err', data.message || 'Could not generate social posts');
     }
@@ -1109,7 +1283,7 @@ async function _fetchSocialPosts(realIdx) {
   }
 }
 
-function _renderSocialPosts(posts, imageUrl, tvScript) {
+function _renderSocialPosts(posts, imageUrl) {
   // Instagram caption
   const igBody = $('sp-ig-text');
   if (igBody) {
@@ -1133,25 +1307,6 @@ function _renderSocialPosts(posts, imageUrl, tvScript) {
   const liEl = $('sp-li-text');
   if (liEl) liEl.innerHTML = _formatPostText(posts.linkedin || '');
   _setCardImage('sp-li-image', imageUrl, 'sp-li-img-wrap');
-  // TV Script
-  const tvEl = $('sp-tv-text');
-  if (tvEl && tvScript) {
-    // Clean and format the script for teleprompter display
-    const formatted = esc(tvScript)
-      .replace(/\*\*([^*]+)\*\*/g, '$1')          // strip **bold** markdown
-      .replace(/\[(?:WORDS|TIME)[^\]]*\]\s*/g, '') // remove meta tags from body (shown in footer)
-      .replace(/\/\//g, '<span class="sp-tv-pause">//</span>')
-      .replace(/\n+$/, '')                         // trim trailing newlines
-      .replace(/\n/g, '<br>');
-    tvEl.innerHTML = formatted;
-    // Update the meta line from [WORDS: X] [TIME: ~Ys]
-    const metaEl = $('sp-tv-meta');
-    if (metaEl) {
-      const wMatch = tvScript.match(/\[WORDS:\s*(\d+)\]/);
-      const tMatch = tvScript.match(/\[TIME:\s*~?(\d+)s\]/);
-      if (wMatch && tMatch) metaEl.textContent = `${wMatch[1]} words · ~${tMatch[1]}s · 150 WPM`;
-    }
-  }
 }
 
 function _setCardImage(containerId, imageUrl, wrapClass) {
@@ -1173,17 +1328,12 @@ function _formatPostText(text) {
 
 function copySocialPost() {
   const realIdx = CURRENT_REAL_IDX;
-  let text = '';
-  if (_activeSocialTab === 'tv') {
-    text = _socialTvCache[realIdx] || '';
-  } else {
-    const posts = _socialPostsCache[realIdx];
-    if (!posts) { toast('err', 'No posts generated yet'); return; }
-    text = posts[_activeSocialTab] || '';
-  }
+  const posts = _socialPostsCache[realIdx];
+  if (!posts) { toast('err', 'No posts generated yet'); return; }
+  const text = posts[_activeSocialTab] || '';
   if (!text) { toast('err', 'Nothing to copy'); return; }
   navigator.clipboard.writeText(text).then(
-    ()  => toast('ok', `${_activeSocialTab === 'tv' ? 'TV script' : _activeSocialTab + ' post'} copied`),
+    ()  => toast('ok', `${_activeSocialTab} post copied`),
     ()  => toast('err', 'Clipboard write failed')
   );
 }
@@ -1194,8 +1344,19 @@ async function regenSocialPosts() {
   delete _socialPostsCache[realIdx];
   delete _socialImageCache[realIdx];
   delete _socialTvCache[realIdx];
+  delete _socialPodcastCache[realIdx];
   await _fetchSocialPosts(realIdx);
 }
+
+// Close script modals on Escape
+document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      $('tv-modal-overlay')?.classList.remove('open');
+      $('radio-modal-overlay')?.classList.remove('open');
+    }
+  });
+});
 
 // Close social modal on Escape
 document.addEventListener('DOMContentLoaded', () => {
@@ -1710,6 +1871,8 @@ function recordActivity(realIdx, patch) {
     source_name:          a ? (a.source_name || '—')    : '—',
     published_hocalwire:  false,
     video_sent:           false,
+    tv_sent:              false,
+    radio_sent:           false,
     last_at:              null,
   };
   ACTIVITY_MAP[realIdx] = Object.assign(existing, patch, { last_at: new Date().toISOString() });
@@ -1747,12 +1910,20 @@ function renderActivityView() {
     const vidBadge   = d.video_sent
       ? `<span class="at-badge yes-video">Yes</span>`
       : `<span class="at-badge no">—</span>`;
+    const tvBadge    = d.tv_sent
+      ? `<span class="at-badge yes-tv">Sent</span>`
+      : `<span class="at-badge no">—</span>`;
+    const radioBadge = d.radio_sent
+      ? `<span class="at-badge yes-radio">Sent</span>`
+      : `<span class="at-badge no">—</span>`;
     const timeStr    = d.last_at ? relTime(d.last_at) : '—';
     return `<tr>
       <td><div class="at-headline">${esc(d.headline)}</div></td>
       <td><div class="at-source">${esc(d.source_name)}</div></td>
       <td style="text-align:center">${hocBadge}</td>
       <td style="text-align:center">${vidBadge}</td>
+      <td style="text-align:center">${tvBadge}</td>
+      <td style="text-align:center">${radioBadge}</td>
       <td class="at-time">${timeStr}</td>
     </tr>`;
   }).join('');
