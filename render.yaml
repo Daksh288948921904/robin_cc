@@ -12,6 +12,9 @@ services:
       # ---- Groq LLM ----
       - key: GROQ_API_KEY
         sync: false
+      # ---- Together.ai (image generation) ----
+      - key: TOGETHER_API_KEY
+        sync: false
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
       # ---- HuggingFace ----
