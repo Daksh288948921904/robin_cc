@@ -72,6 +72,41 @@ _KEYFACT_INSTITUTION_RE = re.compile(
 # Sentence boundary splitter — handles .!? followed by whitespace
 _SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
 
+# Attribution verb list — stripped when cleaning extracted speaker strings
+_ATTRIBUTION_VERBS = frozenset({
+    "said", "stated", "told", "wrote", "confirmed", "warned", "added",
+    "noted", "declared", "announced", "reported", "explained", "argued",
+    "claimed", "stressed", "emphasized", "acknowledged", "insisted",
+})
+
+def _clean_speaker(raw: str) -> str:
+    """
+    Strip attribution verbs and punctuation from a raw speaker string,
+    returning just the name/role portion.
+
+    Examples:
+        "Finance Minister Ahmed said" → "Finance Minister Ahmed"
+        "Secretary Blinken, told reporters" → "Secretary Blinken"
+        "the official" → "official"
+    """
+    if not raw:
+        return raw
+    # Cut off at the first attribution verb (handles "told reporters" etc.)
+    verb_pattern = re.compile(
+        r'\b(?:said|stated|told|wrote|confirmed|warned|added|noted|'
+        r'declared|announced|reported|explained|argued|claimed|stressed|'
+        r'emphasized|acknowledged|insisted)\b',
+        re.IGNORECASE,
+    )
+    m = verb_pattern.search(raw)
+    cleaned = raw[:m.start()].strip() if m else raw.strip()
+    cleaned = cleaned.strip(".,;:\"',")
+    # Strip leading articles / conjunctions that crept in from pre-context
+    words = cleaned.split()
+    while words and words[0].lower() in ("the", "a", "an", "and", "but", "or"):
+        words.pop(0)
+    return " ".join(words).strip(".,;:\"'") or raw.strip()
+
 # Human-angle scoring keywords
 _HUMAN_ANGLE_KEYWORDS = frozenset([
     'family', 'families', 'children', 'child', 'civilian', 'civilians',
@@ -385,11 +420,30 @@ def extract_article_signals(articles: List[Dict]) -> Dict:
 
     usable = articles[:8]
 
+    # Lazy import — only paid when a non-English article is present
+    _translate_fn = None
+
+    def _to_english(text: str, src_lang: str) -> str:
+        """Translate text to English, returning original on any failure."""
+        nonlocal _translate_fn
+        if not text or not text.strip():
+            return text
+        try:
+            if _translate_fn is None:
+                from src.translation.translator import translate_text as _tf
+                _translate_fn = _tf
+            result = _translate_fn(text, source_lang=src_lang, target_lang="en")
+            return (result or text).strip()
+        except Exception:
+            return text
+
     for idx, article in enumerate(usable, 1):
         story = article.get("story", "")
         heading = article.get("heading", "No headline")
         source_name = article.get("source_name", "Unknown Source")
         location = article.get("location", "Unknown")
+        article_lang = (article.get("language") or "en").lower().split("-")[0]
+        is_foreign = article_lang != "en"
 
         # ── Extract quotes ──
         for match in _QUOTE_RE.finditer(story):
@@ -401,19 +455,49 @@ def extract_article_signals(articles: List[Dict]) -> Dict:
             if re.search(r'\?\s+[A-Z]', quote_text) and len(quote_text) > 80:
                 continue
             open_pos = match.start()
-            pre_context = story[max(0, open_pos - 80):open_pos]
+            close_pos = match.end()
+
+            # Pre-context: up to 200 chars before opening quote
+            pre_context = story[max(0, open_pos - 200):open_pos]
+
+            # Post-context: up to 120 chars after closing quote (catches "text," said Name)
+            post_context = story[close_pos:close_pos + 120]
+
+            # Try pre-context attribution first (e.g. "Blinken told reporters,")
             attribution_match = re.search(
-                r'([A-Za-z][^.!?]{5,60}?'
+                r'([A-Za-z][^.!?]{5,80}?'
                 r'(?:said|stated|told|wrote|confirmed|warned|added'
                 r'|noted|declared|announced|reported))\s*[,:]?\s*$',
                 pre_context
             )
             if attribution_match:
-                speaker = attribution_match.group(1).strip()
+                speaker = _clean_speaker(attribution_match.group(1))
             elif match.group(2):
-                speaker = match.group(2).strip()
+                # Name captured after closing quote by the regex (Group 2)
+                speaker = _clean_speaker(match.group(2).strip())
             else:
-                speaker = pre_context.strip()[-40:].strip(' ,"\'')
+                # Try post-context: ", said John Smith" or ". John Smith told"
+                post_match = re.search(
+                    r'^[,\s]*'
+                    r'(?:said|stated|told|wrote|confirmed|warned|added'
+                    r'|noted|declared|announced|reported)\s+'
+                    r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4})',
+                    post_context
+                )
+                if post_match:
+                    speaker = _clean_speaker(post_match.group(1))
+                else:
+                    # Last resort: last 60 chars of pre-context
+                    speaker = pre_context.strip()[-60:].strip(' ,"\'')
+                    # Try to pull just a capitalized name from that fragment
+                    name_match = re.search(
+                        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4})\s*$',
+                        speaker
+                    )
+                    if name_match:
+                        speaker = name_match.group(1)
+
+            speaker = _clean_speaker(speaker)
 
             # Drop quotes with no recoverable attribution — a quote
             # with no speaker is worse than no quote at all.
@@ -423,6 +507,10 @@ def extract_article_signals(articles: List[Dict]) -> Dict:
             # Sanitise speaker: reject RSS navigation artifacts
             if speaker.lower().strip() in _INVALID_SPEAKERS:
                 continue
+
+            # Translate quote text to English for non-English source articles
+            if is_foreign:
+                quote_text = _to_english(quote_text, article_lang)
 
             # De-duplicate by checking if similar text already captured
             if not any(q["text"][:40] == quote_text[:40] for q in quotes):
@@ -456,9 +544,13 @@ def extract_article_signals(articles: List[Dict]) -> Dict:
         # here without also removing those injection blocks in build_dynamic_prompt().
         snippet = story[:2000].strip()
 
+        # For non-English sources, show translated headline in the digest so the
+        # LLM works entirely in English and never parrots original-language text.
+        display_heading = _to_english(heading, article_lang) if is_foreign else heading
+
         digest_parts.append(
             f"Source {idx} ({source_name}, {location}):\n"
-            f"Headline: {heading}\n"
+            f"Headline: {display_heading}\n"
             f"Content: {snippet}"
         )
 
@@ -852,7 +944,7 @@ Nothing before the headline. Nothing between headline
 and subheadline.
 
 # [Headline — 10–15 words, active voice, names who did what, about {topic}]
-### [Subheadline — one sentence, max 150 characters, adds context not already in the headline]
+### [Subheadline — one sentence, max 160 characters, adds context not already in the headline]
 
 {dateline} —
 
@@ -1168,7 +1260,7 @@ def build_dynamic_prompt(
         source_name = article.get("source_name", "Unknown")
         story = article.get("story", "")
         sentences = re.split(r'(?<=[.!?])\s+', story)
-        for sent in sentences:
+        for s_idx, sent in enumerate(sentences):
             has_quote_char = (
                 '"' in sent or
                 '\u201c' in sent or
@@ -1178,8 +1270,28 @@ def build_dynamic_prompt(
                 fingerprint = sent.strip()[:40]
                 if fingerprint not in seen_texts:
                     seen_texts.add(fingerprint)
+                    # Try to find the speaker name near this sentence
+                    name_label = ""
+                    # Check this sentence for attribution verb + name
+                    inline = re.search(
+                        r'(?:said|stated|told|confirmed|warned|noted|declared)\s+'
+                        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})',
+                        sent
+                    )
+                    if inline:
+                        name_label = f" [speaker: {_clean_speaker(inline.group(1))}]"
+                    else:
+                        # Check preceding sentence for a proper name
+                        prev_sent = sentences[s_idx - 1] if s_idx > 0 else ""
+                        prev_name = re.search(
+                            r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\s+'
+                            r'(?:said|stated|told|confirmed|warned|noted|declared)',
+                            prev_sent
+                        )
+                        if prev_name:
+                            name_label = f" [speaker: {_clean_speaker(prev_name.group(1))}]"
                     raw_quote_sentences.append(
-                        f"  [{source_name}]: {sent.strip()}"
+                        f"  [{source_name}]{name_label}: {sent.strip()}"
                     )
     if raw_quote_sentences and audit.has_direct_quotes:
         raw_quotes_block = (
@@ -1794,8 +1906,8 @@ def parse_generated_article(generated_text: str) -> Dict:
             stripped = lines[i].strip()
             if stripped.startswith("### "):
                 sub_heading = stripped.replace("### ", "", 1).strip()
-                if len(sub_heading) > 150:
-                    sub_heading = sub_heading[:147] + "..."
+                if len(sub_heading) > 160:
+                    sub_heading = sub_heading[:157] + "..."
                 subheading_index = i
                 break
 

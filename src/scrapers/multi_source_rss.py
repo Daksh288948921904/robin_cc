@@ -15,6 +15,42 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def _translate_heading(title: str) -> tuple[str, str]:
+    """
+    Detect and translate a non-English title to English.
+    Returns (translated_title, language_code).
+    Only called when the title contains non-ASCII characters.
+
+    Uses source_lang='auto' so mixed-language titles (e.g. Japanese text with
+    embedded English words) are still translated — langdetect can misclassify
+    these as 'en' and the old guard would skip translation entirely.
+    """
+    lang_code = "en"
+    try:
+        from langdetect import detect
+        lang_code = detect(title) or "en"
+    except Exception:
+        pass
+
+    try:
+        from src.translation.translator import translate_text
+        # Use 'auto' so Google Translate handles mixed-language titles correctly.
+        # If langdetect says 'en' but non-ASCII chars are present, auto-detect
+        # will still pick up the dominant non-English language.
+        translated = translate_text(title, source_lang="auto", target_lang="en")
+        if translated and translated.strip() and translated.strip() != title:
+            # If langdetect said "en" but we successfully translated a different
+            # result, the title was actually non-English — keep the detected code
+            # or fall back to "xx" so the language badge still appears.
+            if lang_code == "en":
+                lang_code = "xx"
+            return translated.strip(), lang_code
+    except Exception:
+        pass
+
+    return title, lang_code
+
 # ── Source registry ────────────────────────────────────────────
 MAJOR_SOURCES: Dict[str, Dict] = {
     # Global Wire Services
@@ -155,18 +191,24 @@ def _fetch_one(name: str, cfg: Dict, limit: int = 8) -> List[Dict]:
             top_image = _extract_image(entry)
 
             if title and link:
+                original_heading = title
+                lang_code = "en"
+                if any(ord(c) > 127 for c in title):
+                    title, lang_code = _translate_heading(title)
+
                 entries.append({
-                    "heading":      title,
-                    "story":        summary,
-                    "source_url":   link,
-                    "source_name":  name,
-                    "region":       region,
-                    "publish_date": published,
-                    "scraped_at":   datetime.utcnow().isoformat(),
-                    "word_count":   len(summary.split()),
-                    "authors":      [],
-                    "top_image":    top_image,
-                    "language":     "en",
+                    "heading":          title,
+                    "original_heading": original_heading if lang_code != "en" else "",
+                    "story":            summary,
+                    "source_url":       link,
+                    "source_name":      name,
+                    "region":           region,
+                    "publish_date":     published,
+                    "scraped_at":       datetime.utcnow().isoformat(),
+                    "word_count":       len(summary.split()),
+                    "authors":          [],
+                    "top_image":        top_image,
+                    "language":         lang_code,
                 })
 
         logger.info(f"[RSS] {name}: {len(entries)} entries  "

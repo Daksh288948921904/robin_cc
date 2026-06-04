@@ -605,7 +605,7 @@ def preview_publish_to_hocalwire(idx: int):
 
         article_payload = {
             'heading':     title,
-            'sub_heading': cached.get('subtitle', ''),
+            'sub_heading': (cached.get('subtitle') or cached.get('sub_heading') or '').strip(),
             'story':       body,
             'image_url':   image_url,
             'language':    'en',
@@ -686,7 +686,7 @@ def publish_to_hocalwire(idx: int):
 
         article_payload = {
             'heading':     title,
-            'sub_heading': cached.get('subtitle', ''),
+            'sub_heading': (cached.get('subtitle') or cached.get('sub_heading') or '').strip(),
             'story':       body,
             'image_url':   image_url,
             'language':    'en',
@@ -697,6 +697,11 @@ def publish_to_hocalwire(idx: int):
         success = upload_to_hocalwire(article_payload)
         if success:
             feed_id = article_payload.get('hocalwire_feed_id', '')
+            # Mirror upload status back onto the live article so the feed
+            # badge can detect it without a page reload.
+            main_article['upload_status']     = 'uploaded'
+            main_article['hocalwire_feed_id'] = feed_id
+            main_article['uploaded_at']       = article_payload.get('uploaded_at', '')
             _record_activity(key, main_article, published_hocalwire=True)
             return jsonify({
                 'status':  'success',
@@ -776,9 +781,9 @@ def download_docx(idx: int):
 @login_required
 def generate_ai_image(idx: int):
     """
-    Generate an AI image for article[idx] using SD Turbo.
-    Result is cached; repeated calls return the same URL instantly.
-    Returns JSON: { status, image_url }
+    Generate an AI image for article[idx] via Together.ai FLUX.1-schnell.
+    Prompt is built by Groq (article-specific) with rule-based fallback.
+    Result cached in-memory; force=true bypasses cache.
     """
     if idx < 0 or idx >= len(SCRAPED_ARTICLES):
         return jsonify({'status': 'error', 'message': 'Article not found'}), 404
@@ -786,88 +791,93 @@ def generate_ai_image(idx: int):
     key = str(idx)
     force = request.args.get('force', 'false').lower() == 'true'
     if not force and key in AI_IMAGES:
-        return jsonify({'status': 'success', 'image_url': AI_IMAGES[key]})
+        return jsonify({'status': 'success', 'image_url': AI_IMAGES[key], 'model_label': 'FLUX.1-schnell'})
 
-    # Clear stale cache entries so fresh image is used for publish
     AI_IMAGES.pop(key, None)
     AI_IMAGE_PUBLIC.pop(key, None)
 
     article = SCRAPED_ARTICLES[idx]
 
     try:
-        from src.image_generation.image_creator import (
-            build_image_prompt, build_negative_prompt,
-            generate_with_huggingface, generate_with_pollinations,
-            get_hf_token,
-        )
-        import hashlib
+        import requests as _req, hashlib
+        from src.image_generation.image_creator import build_image_prompt
 
         AI_IMAGES_STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
+        # ── 1. Build prompt ──────────────────────────────────────
         try:
             from src.image_generation.prompt_generator import generate_groq_image_prompt
             prompt = generate_groq_image_prompt(article) or build_image_prompt(article)
-        except Exception:
+        except Exception as _pe:
+            app.logger.warning(f"Groq prompt failed, using rule-based: {_pe}")
             prompt = build_image_prompt(article)
-        negative_prompt = build_negative_prompt()
 
-        import urllib.parse, time as _time
+        app.logger.info(f"Image prompt: {prompt[:120]}...")
+
+        # ── 2. FLUX.1-schnell via Together.ai ───────────────────
+        together_key = os.environ.get('TOGETHER_API_KEY', '').strip()
+        if not together_key:
+            return jsonify({'status': 'error',
+                            'message': 'TOGETHER_API_KEY not set in .env'}), 500
 
         image_bytes = None
-        public_image_url = None
-
-        token = get_hf_token()
-        if token:
-            image_bytes = generate_with_huggingface(
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                width=512,
-                height=512,
-                num_inference_steps=4,
-                guidance_scale=0.0,
-            )
-
-        if not image_bytes:
-            # Build Pollinations URL before downloading — it's publicly accessible
-            seed = int(_time.time())
-            clean_prompt = prompt.split(', Canon EOS')[0] if ', Canon EOS' in prompt else prompt
-            encoded_prompt = urllib.parse.quote(clean_prompt)
-            public_image_url = (
-                f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-                f"?width=512&height=512&seed={seed}&nologo=true"
-            )
-            image_bytes = generate_with_pollinations(prompt=prompt, width=512, height=512)
-
-        if not image_bytes:
-            return jsonify({'status': 'error', 'message': 'All image sources failed'}), 500
-
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        title_hash = hashlib.md5(article.get('heading', '').encode()).hexdigest()[:8]
-        filename = f"sdturbo_{timestamp}_{title_hash}.png"
-        filepath = AI_IMAGES_STATIC_DIR / filename
+        used_model  = 'FLUX.1-schnell'
 
         try:
-            from PIL import Image
-            img = Image.open(io.BytesIO(image_bytes))
-            img.save(str(filepath), format='PNG')
+            app.logger.info("Together.ai → black-forest-labs/FLUX.1-schnell")
+            resp = _req.post(
+                'https://api.together.xyz/v1/images/generations',
+                headers={
+                    'Authorization': f'Bearer {together_key}',
+                    'Content-Type': 'application/json',
+                },
+                json={
+                    'model': 'black-forest-labs/FLUX.1-schnell',
+                    'prompt': prompt,
+                    'n': 1,
+                    'steps': 4,
+                    'response_format': 'b64_json',
+                },
+                timeout=120,
+            )
+            if resp.status_code == 200:
+                import base64
+                b64 = resp.json()['data'][0]['b64_json']
+                image_bytes = base64.b64decode(b64)
+                app.logger.info(f"FLUX.1-schnell: {len(image_bytes)//1024} KB")
+            else:
+                app.logger.warning(f"Together.ai: {resp.status_code} {resp.text[:200]}")
+        except Exception as _me:
+            app.logger.warning(f"Together.ai error: {_me}")
+
+        if not image_bytes:
+            return jsonify({'status': 'error',
+                            'message': 'Image generation failed — check TOGETHER_API_KEY and try again'}), 500
+
+        # ── 3. Save to disk ──────────────────────────────────────
+        timestamp  = datetime.now().strftime('%Y%m%d_%H%M%S')
+        title_hash = hashlib.md5(article.get('heading', '').encode()).hexdigest()[:8]
+        filename   = f"aiimg_{timestamp}_{title_hash}.jpg"
+        filepath   = AI_IMAGES_STATIC_DIR / filename
+
+        try:
+            from PIL import Image as _PILImage
+            _PILImage.open(io.BytesIO(image_bytes)).save(str(filepath), format='JPEG', quality=90)
         except Exception:
             filepath.write_bytes(image_bytes)
 
         url = f"/static/ai_images/{filename}"
         AI_IMAGES[key] = url
 
-        # Upload to catbox.moe for a stable public URL.
-        # Pollinations URLs regenerate on every fetch; HuggingFace images have no
-        # public URL at all. Catbox gives us the exact bytes Hocalwire will receive.
+        # ── 4. Upload to catbox for stable public URL (Hocalwire) ─
         stable_url = _upload_to_catbox(filepath)
         if stable_url:
             AI_IMAGE_PUBLIC[key] = stable_url
-            app.logger.info(f"AI image hosted at: {stable_url}")
-        elif public_image_url:
-            # Fallback to Pollinations URL if catbox upload fails
-            AI_IMAGE_PUBLIC[key] = public_image_url
+            app.logger.info(f"Catbox URL: {stable_url}")
 
-        return jsonify({'status': 'success', 'image_url': url, 'prompt_used': prompt})
+        return jsonify({'status': 'success', 'image_url': url,
+                        'prompt_used': prompt, 'model_label': used_model,
+                        'model_id': used_model})
 
     except Exception as e:
         tb = traceback.format_exc()

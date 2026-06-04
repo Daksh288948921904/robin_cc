@@ -106,26 +106,44 @@ KNOWN_FIGURES: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT = """\
-You are an expert news photo art director and AI image prompt engineer working for a major wire service.
+You are a news photo art director writing prompts for FLUX, an AI image model.
 
-Your task: given a news article's headline, subtitle, and story lead, write ONE detailed image generation prompt for a photorealistic news photograph.
+Your task: given a news article, write ONE image generation prompt for a photorealistic news photograph.
 
-STRICT RULES:
-1. If a named person appears, describe them physically and contextually (age, appearance, attire, pose, setting).
-2. Anchor every detail to THIS specific article — not a generic category photo.
-3. Structure: [subject + action] [specific setting/backdrop] [atmosphere/mood] [lighting] [camera style]
-4. Length: 2–3 sentences. No bullet points. No explanation. Output ONLY the prompt.
-5. Begin with: "A Reuters/AP news photograph of..." or "An AFP documentary photograph of..."
-6. Make it hyper-specific: a reader should immediately know which news event it depicts.
-7. Do NOT describe: text overlays, watermarks, logos, blank rooms, or abstract concepts.
-8. Close with: "photorealistic, Canon EOS 5D Mark IV, 35mm wide lens, natural available light, sharp focus, news agency quality"
+STEP 1 — IDENTIFY THE MAIN ACTION:
+Before writing anything, ask: what is the single most dramatic thing HAPPENING in this story?
+- Arrest/raid → show the arrest scene
+- War/strike → show military activity or aftermath
+- Protest → show the crowd
+- Election → show empty polling station or ballot boxes
+- Economic crisis → show trading floor or street scene
+- Corruption scandal → show a courthouse or police activity
+The image must depict WHAT IS HAPPENING, not the background context.
 
-CRITICAL COMPOSITION RULES (follow strictly):
-- NEVER request a close-up or portrait shot of a face. Faces render poorly in AI image models.
-- Always use WIDE or MEDIUM shots: full body, waist-up, or environmental scene.
-- For people: show them from the SIDE, BACK, or at DISTANCE within their setting (e.g. "seen from behind at a podium", "walking through the courtroom", "standing at a distance before the judge's bench").
-- Prefer showing the ENVIRONMENT and CONTEXT over the person's face: courtroom interior, street scene, press conference hall, military camp, etc.
-- If the story has no named person, describe only the scene/location/event — no faces at all.
+ABSOLUTE RULES:
+1. NEVER use any organisation name, institution name, brand name, or building name in your prompt.
+   BAD: "National Nutrition Agency building" → FLUX recalls a real training image
+   GOOD: "Indonesian government ministry building exterior"
+   BAD: "BBC headquarters" → GOOD: "modern British television broadcasting studio"
+2. NEVER describe any person's face, expression, or head. NO portraits, NO headshots.
+3. NEVER mention anyone by name — names trigger portrait generation.
+4. If people appear: silhouettes, figures from BEHIND, crowds at distance only.
+5. Focus on OBJECTS, ENVIRONMENTS, ATMOSPHERE — not faces.
+6. Length: 2 sentences. Output ONLY the prompt. No explanation.
+7. Begin: "A Reuters/AP news photograph of..." or "An AFP documentary photograph of..."
+8. End: "wide-angle lens, photorealistic, Canon EOS 5D Mark IV, natural available light, sharp focus, news agency quality"
+
+TOPIC VISUAL GUIDE:
+- Arrest/corruption → police officers escorting handcuffed figure from behind, courthouse exterior, police vehicles
+- War/military → soldiers from behind, military vehicles, smoke, rubble, equipment
+- Politics → empty parliament chamber, flags at podium, official exterior — no faces
+- Economy/finance → trading floor screens, currency, empty bank lobby, market data boards
+- Housing/property → rows of houses, For Sale signs on residential street, empty flat interior
+- Technology → server racks, glowing circuit boards, screens with code — no people
+- Health → hospital corridor, medical equipment, lab — no faces
+- Protest → crowd from above or behind, signs/banners filling frame, wide street
+- Sports → empty stadium, sports equipment, pitch or court — no faces
+- Food/nutrition → market stalls with produce, empty school canteen, food distribution queue from behind
 """
 
 
@@ -139,7 +157,8 @@ def _get_all_groq_clients() -> list:
 
     clients = []
     for var in ("GROQ_API_KEY", "GROQ_API_KEY_2", "GROQ_API_KEY_3",
-                "GROQ_API_KEY_4", "GROQ_API_KEY_5"):
+                "GROQ_API_KEY_4", "GROQ_API_KEY_5",
+                "GROQ_API_KEY_6", "GROQ_API_KEY_7"):
         key = os.getenv(var, "").strip()
         if key:
             clients.append((var, Groq(api_key=key)))

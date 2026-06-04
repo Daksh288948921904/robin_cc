@@ -294,18 +294,45 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
     subtitle = re.sub(r"\*+", "", subtitle).strip()           # strip markdown bold/italic markers
     if subtitle.upper() in ("SUB", "SUBTITLE", "NONE", "N/A", ""):
         subtitle = ""
+
     byline   = byline_match.group(1).strip()   if byline_match   else f"robin cc | {datetime.utcnow().strftime('%B %d, %Y')}"
     location = location_match.group(1).strip() if location_match else (main_article.get("region") or "")
     location = re.sub(r"\*+", "", location).strip()
     category = category_match.group(1).strip() if category_match else "World"
 
-    # Strip header lines to get body
-    body = raw
-    for pat in (r"TITLE:[^\n]*\n?", r"SUBTITLE:[^\n]*\n?", r"BYLINE:[^\n]*\n?", r"LOCATION:[^\n]*\n?", r"CATEGORY:[^\n]*\n?", r"-{3,}\n?"):
-        body = re.sub(pat, "", body)
+    # Use the --- separator as primary split point; fall back to line-by-line stripping
+    sep_match = re.search(r'^---+\s*$', raw, re.MULTILINE)
+    if sep_match:
+        body = raw[sep_match.end():].strip()
+    else:
+        body = raw
+        for pat in (r"TITLE:[^\n]*\n?", r"SUBTITLE:[^\n]*\n?", r"BYLINE:[^\n]*\n?",
+                    r"LOCATION:[^\n]*\n?", r"CATEGORY:[^\n]*\n?", r"-{3,}\n?"):
+            body = re.sub(pat, "", body, flags=re.IGNORECASE)
+        body = body.strip()
+
     # Strip any LLM-generated Sources block at the end
     body = re.sub(r'\n*\*?\*?Sources?:?\*?\*?\s*\n[\s\S]*$', '', body, flags=re.IGNORECASE)
-    body = body.strip()
+
+    # Strip any metadata lines the LLM echoed into the article body
+    # (title, subtitle, byline, location, category sometimes repeat after the separator,
+    #  sometimes wrapped in **bold** markdown)
+    _meta_to_strip = {
+        v.strip().lower()
+        for v in (title, subtitle, byline, location, category)
+        if v and v.strip()
+    }
+    _cleaned_lines = []
+    for _line in body.splitlines():
+        _s = _line.strip()
+        # Strip markdown bold/italic markers before comparing
+        _s_clean = re.sub(r'\*+|_{1,2}', '', _s).strip()
+        if _s_clean.lower() in _meta_to_strip:
+            continue
+        if re.match(r'^robin\s+cc\s*\|', _s_clean, re.IGNORECASE):
+            continue
+        _cleaned_lines.append(_line)
+    body = "\n".join(_cleaned_lines).strip()
 
     # Build deduplicated sources list from main + coverage ONLY
     sources_list = []

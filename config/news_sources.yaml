@@ -633,8 +633,9 @@ sources:
       headline: ''
       content: ''
     priority: 2
-    enabled: false  # DISABLED: The Wire — 0 yield, likely anti-scraping
-    rate_limit_delay: 2
+    enabled: true
+    js_render: true
+    rate_limit_delay: 3
   - name: The Daily Star
     url: https://www.thedailystar.net
     rss_feed: https://www.thedailystar.net/rss.xml  # FIXED: was arcio/rss/ (404)
@@ -693,8 +694,9 @@ sources:
       headline: ''
       content: ''
     priority: 2
-    enabled: false  # DISABLED: New Zealand Herald — only 2 yield, 8 short/skipped, broken RSS
-    rate_limit_delay: 2
+    enabled: true
+    js_render: true
+    rate_limit_delay: 3
   - name: Toronto Star
     url: https://www.thestar.com
     rss_feed: https://www.thestar.com/content/thestar/feed.RSSManagerServlet.articles.topstories.rss  # Returns 403; CSS Scraper fallback likely needed
@@ -708,8 +710,9 @@ sources:
       headline: ''
       content: ''
     priority: 2
-    enabled: false  # DISABLED: Toronto Star — RSS returns 403, 0 yield
-    rate_limit_delay: 2
+    enabled: true
+    js_render: true
+    rate_limit_delay: 3
   - name: The Globe and Mail
     url: https://www.theglobeandmail.com
     rss_feed: https://www.theglobeandmail.com/arc/outboundfeeds/rss/category/canada/
@@ -1055,8 +1058,9 @@ sources:
       headline: ''
       content: ''
     priority: 3
-    enabled: false  # DISABLED: The Edge Malaysia — 0 yield
-    rate_limit_delay: 2
+    enabled: true
+    js_render: true
+    rate_limit_delay: 3
   - name: GMA News
     url: https://www.gmanetwork.com/news
     rss_feed: https://data.gmanetwork.com/gno/rss/news/feed.xml  # 15 entries verified
@@ -1145,8 +1149,9 @@ sources:
       headline: ''
       content: ''
     priority: 3
-    enabled: false  # DISABLED: Tehran Times — 0 yield
-    rate_limit_delay: 2
+    enabled: true
+    js_render: true
+    rate_limit_delay: 3
   - name: Arab News
     url: https://www.arabnews.com
     rss_feed: https://www.arabnews.com/rss.xml
@@ -1160,7 +1165,7 @@ sources:
       headline: ''
       content: ''
     priority: 3
-    enabled: false
+    enabled: true
     rate_limit_delay: 2
   - name: Saudi Gazette
     url: https://www.saudigazette.com.sa
@@ -1175,8 +1180,9 @@ sources:
       headline: ''
       content: ''
     priority: 3
-    enabled: false  # DISABLED: Saudi Gazette — 0 yield
-    rate_limit_delay: 2
+    enabled: true
+    js_render: true
+    rate_limit_delay: 3
   - name: The Peninsula
     url: https://www.thepeninsulaqatar.com
     rss_feed: https://www.thepeninsulaqatar.com/rss
@@ -1190,8 +1196,9 @@ sources:
       headline: ''
       content: ''
     priority: 3
-    enabled: false  # DISABLED: The Peninsula — 0 yield
-    rate_limit_delay: 2
+    enabled: true
+    js_render: true
+    rate_limit_delay: 3
   - name: The Irish Times
     url: https://www.irishtimes.com
     rss_feed: https://www.irishtimes.com/cmlink/news-1.1319192
@@ -1434,8 +1441,9 @@ sources:
       headline: ''
       content: ''
     priority: 2
-    enabled: false  # DISABLED: Pakistan Today — 0 yield
-    rate_limit_delay: 2
+    enabled: true
+    js_render: true
+    rate_limit_delay: 3
   - name: Newsroom NZ
     url: https://www.newsroom.co.nz
     rss_feed: https://www.newsroom.co.nz/rss
@@ -1464,8 +1472,9 @@ sources:
       headline: ''
       content: ''
     priority: 2
-    enabled: false  # DISABLED: The Express Tribune — 0 yield
-    rate_limit_delay: 2
+    enabled: true
+    js_render: true
+    rate_limit_delay: 3
   - name: Stuff NZ
     url: https://www.stuff.co.nz
     rss_feed: https://www.stuff.co.nz/rss
@@ -1479,5 +1488,258 @@ sources:
       headline: ''
       content: ''
     priority: 3
-    enabled: false  # DISABLED: Stuff NZ — 0 yield
+    enabled: true
+    js_render: true
+    rate_limit_delay: 3
+
+  # ============================================
+  # PAKISTAN — expanded coverage
+  # ============================================
+  - name: Geo News
+    url: https://www.geo.tv
+    rss_feed: https://www.geo.tv/rss/1/7
+    backup_url: https://www.geo.tv/category/top-stories
+    region: Pakistan
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 2
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: ARY News
+    url: https://arynews.tv
+    rss_feed: https://arynews.tv/feed/
+    backup_url: https://arynews.tv/category/pakistan
+    region: Pakistan
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 2
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: The Nation Pakistan
+    url: https://www.nation.com.pk
+    rss_feed: https://www.nation.com.pk/rss/pakistan
+    backup_url: https://www.nation.com.pk/pakistan
+    region: Pakistan
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 3
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: Business Recorder Pakistan
+    url: https://www.brecorder.com
+    rss_feed: https://www.brecorder.com/feeds/top-stories
+    backup_url: https://www.brecorder.com/news/top-stories
+    region: Pakistan
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 3
+    enabled: true
+    rate_limit_delay: 2
+
+  # ============================================
+  # BANGLADESH — expanded coverage
+  # ============================================
+  - name: Dhaka Tribune
+    url: https://www.dhakatribune.com
+    rss_feed: https://www.dhakatribune.com/feed
+    backup_url: https://www.dhakatribune.com/bangladesh
+    region: Bangladesh
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 2
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: bdnews24
+    url: https://bdnews24.com
+    rss_feed: https://bdnews24.com/feed
+    backup_url: https://bdnews24.com/bangladesh
+    region: Bangladesh
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 2
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: The Business Standard BD
+    url: https://tbsnews.net
+    rss_feed: https://tbsnews.net/feed
+    backup_url: https://tbsnews.net/economy
+    region: Bangladesh
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 3
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: Prothom Alo English
+    url: https://en.prothomalo.com
+    rss_feed: https://en.prothomalo.com/feed
+    backup_url: https://en.prothomalo.com/bangladesh
+    region: Bangladesh
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 3
+    enabled: true
+    rate_limit_delay: 2
+
+  # ============================================
+  # UNITED STATES — expanded coverage
+  # ============================================
+  - name: NPR News
+    url: https://www.npr.org/sections/news
+    rss_feed: https://feeds.npr.org/1001/rss.xml
+    backup_url: https://www.npr.org/sections/world
+    region: US
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 1
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: NBC News
+    url: https://www.nbcnews.com
+    rss_feed: https://feeds.nbcnews.com/nbcnews/public/world
+    backup_url: https://www.nbcnews.com/world
+    region: US
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 2
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: The Hill
+    url: https://thehill.com
+    rss_feed: https://thehill.com/feed
+    backup_url: https://thehill.com/news
+    region: US
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 2
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: Politico
+    url: https://www.politico.com
+    rss_feed: https://www.politico.com/rss/politicopicks.xml
+    backup_url: https://www.politico.com/news
+    region: US
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 2
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: Axios
+    url: https://www.axios.com
+    rss_feed: https://api.axios.com/feed/
+    backup_url: https://www.axios.com/news
+    region: US
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 2
+    enabled: true
+    rate_limit_delay: 2
+
+  # ============================================
+  # SAUDI ARABIA / GULF — expanded coverage
+  # ============================================
+  - name: Al Arabiya English
+    url: https://english.alarabiya.net
+    rss_feed: https://english.alarabiya.net/tools/rss
+    backup_url: https://english.alarabiya.net/arab-and-world
+    region: Middle East
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 2
+    enabled: true
+    rate_limit_delay: 2
+
+  - name: Asharq Al-Awsat
+    url: https://english.aawsat.com
+    rss_feed: https://english.aawsat.com/rss
+    backup_url: https://english.aawsat.com/home/article
+    region: Middle East
+    language: en
+    scrape_method: trafilatura
+    selectors:
+      article_list: ''
+      article_url: ''
+      headline: ''
+      content: ''
+    priority: 3
+    enabled: true
     rate_limit_delay: 2

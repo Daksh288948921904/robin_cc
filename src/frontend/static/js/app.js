@@ -58,6 +58,36 @@ function catOf(a) {
   return { key:'news', cls:'c-news', emoji:'📰' };
 }
 
+// ── Language badge ────────────────────────────────────────────
+const LANG_NAMES = {
+  'ar':'Arabic','bn':'Bengali','zh':'Chinese','zh-cn':'Chinese','zh-tw':'Chinese',
+  'nl':'Dutch','fr':'French','de':'German','gu':'Gujarati','hi':'Hindi',
+  'id':'Indonesian','it':'Italian','ja':'Japanese','kn':'Kannada','ko':'Korean',
+  'ml':'Malayalam','mr':'Marathi','pa':'Punjabi','pl':'Polish','pt':'Portuguese',
+  'ru':'Russian','es':'Spanish','ta':'Tamil','te':'Telugu','th':'Thai',
+  'tr':'Turkish','uk':'Ukrainian','ur':'Urdu','vi':'Vietnamese',
+  'xx':'Translated',
+};
+
+function langBadge(a) {
+  const code = (a.content_language || a.language || 'en').toLowerCase().split('-')[0];
+  if (code === 'en' || !code) return '';
+  const name = LANG_NAMES[code] || code.toUpperCase();
+  return `<span class="card-lang-badge">${name}</span>`;
+}
+
+function hocalwireBadge(a) {
+  if (a.upload_status !== 'uploaded') return '';
+  return `<span class="card-hocalwire-badge" title="Published to Hocalwire">&#10003; Hocalwire</span>
+<div class="published-hover-overlay">
+  <div class="pho-inner">
+    <div class="pho-icon">✓</div>
+    <div class="pho-text">Already Published</div>
+    <div class="pho-sub">Hocalwire</div>
+  </div>
+</div>`;
+}
+
 // ── Helpers ──────────────────────────────────────────────────
 function relTime(s) {
   if (!s) return 'Recent';
@@ -265,10 +295,12 @@ function cardHTML(a, i) {
       </div>`;
   }
 
-  return `<article class="card${isHero?' card-hero':''}" data-cat="${cat.key}" onclick="openReader(${i})">
+  return `<article class="card${isHero?' card-hero':''}${a.upload_status==='uploaded'?' is-published':''}" data-cat="${cat.key}" onclick="openReader(${i})">
     ${media}
+    ${hocalwireBadge(a)}
     <div class="card-badges">
       <span class="card-cat-badge ${cat.cls}">${cat.key}</span>
+      ${langBadge(a)}
       <span class="card-rt-badge">${rt(words)}</span>
     </div>
     ${isHero ? `<span class="card-featured-label">Lead Story</span>` : ''}
@@ -303,6 +335,8 @@ function listCardHTML(a, i) {
     </div>
     <div class="list-meta">
       <span class="list-date">${date}</span>
+      ${langBadge(a)}
+      ${hocalwireBadge(a)}
       <span class="list-badge ${cat.cls}">${cat.key}</span>
     </div>
   </div>`;
@@ -687,12 +721,7 @@ async function generateSummary(realIdx) {
     CURRENT_SUMM = data.summary;
     const s      = data.summary;
 
-    const bylineRaw   = s.byline || '';
-    const bylineParts = bylineRaw.split('|');
-    const bylineDate  = (bylineParts[1]||'').trim() || new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-
     const bodyHtml    = bodyToHtml(s.body || '');
-    const locationStr = (s.location || '').replace(/\*+/g, '').trim().toUpperCase();
 
     const srcsHtml = (s.sources_list||[]).map((src,n)=>`
       <li class="sum-src-item">
@@ -706,15 +735,11 @@ async function generateSummary(realIdx) {
 
     $('summary-section').innerHTML = `
       <div class="summary-result">
-        <div class="sum-masthead">
-          <span class="sum-masthead-date">${esc(bylineDate)}</span>
-        </div>
-        ${locationStr ? `<div class="sum-location"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><circle cx="5.5" cy="4.5" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 1C3.57 1 2 2.57 2 4.5c0 2.72 3.5 5.5 3.5 5.5s3.5-2.78 3.5-5.5C9 2.57 7.43 1 5.5 1z" stroke="currentColor" stroke-width="1.2"/></svg>${esc(locationStr)}</div>` : ''}
         <h2 class="sum-title" contenteditable="false">${esc(s.title||'News Brief')}</h2>
-        ${(()=>{ const st = (s.subtitle||'').replace(/\*+/g,'').replace(/^sub$/i,'').trim(); return st ? `<p class="sum-subtitle">${esc(st)}</p>` : ''; })()}
+        ${(()=>{ const st = (s.subtitle||s.sub_heading||'').replace(/\*+/g,'').replace(/^sub$/i,'').trim(); return st ? `<p class="sum-subtitle">${esc(st)}</p>` : ''; })()}
+        <button class="sum-category-btn" style="display:none" aria-hidden="true">${esc(s.category||'World')}</button>
         <div class="sum-meta-row">
-          <span class="sum-badge">AI BRIEFING</span>
-          <button class="sum-category-btn" onclick="openCategoryPicker(this)" title="Change category">${esc(s.category||'World')}</button>
+          <span class="sum-badge">DNL Briefing</span>
           <span class="sum-meta-sources">${(s.sources_list||[]).length} source${(s.sources_list||[]).length!==1?'s':''} synthesised</span>
         </div>
         <div class="sum-divider"></div>
@@ -951,6 +976,13 @@ async function confirmPublishToHocalwire() {
       if (label) label.textContent = '✓ Published';
       const pb = $('publish-btn');
       if (pb) pb.disabled = true;
+
+      // Mark article in local data so the feed badge appears immediately
+      if (ALL[realIdx]) {
+        ALL[realIdx].upload_status = 'uploaded';
+        if (feedId) ALL[realIdx].hocalwire_feed_id = feedId;
+      }
+      renderFeed();
 
       // Update activity tracking
       recordActivity(realIdx, {published_hocalwire: true});
@@ -1607,7 +1639,7 @@ async function loadAIImage(realIdx) {
       picker.id = 'img-picker';
       picker.className = 'img-picker';
 
-      const aiOpt = _makePickOption('ai', 'AI Generated', 'SD Turbo', data.image_url, true);
+      const aiOpt = _makePickOption('ai', 'AI Generated', data.model_label || 'FLUX', data.image_url, true);
       picker.appendChild(aiOpt);
 
       if (scrapedUrl) {
@@ -1907,9 +1939,6 @@ function renderActivityView() {
     const hocBadge   = d.published_hocalwire
       ? `<span class="at-badge yes-hocalwire">Yes</span>`
       : `<span class="at-badge no">—</span>`;
-    const vidBadge   = d.video_sent
-      ? `<span class="at-badge yes-video">Yes</span>`
-      : `<span class="at-badge no">—</span>`;
     const tvBadge    = d.tv_sent
       ? `<span class="at-badge yes-tv">Sent</span>`
       : `<span class="at-badge no">—</span>`;
@@ -1921,7 +1950,6 @@ function renderActivityView() {
       <td><div class="at-headline">${esc(d.headline)}</div></td>
       <td><div class="at-source">${esc(d.source_name)}</div></td>
       <td style="text-align:center">${hocBadge}</td>
-      <td style="text-align:center">${vidBadge}</td>
       <td style="text-align:center">${tvBadge}</td>
       <td style="text-align:center">${radioBadge}</td>
       <td class="at-time">${timeStr}</td>

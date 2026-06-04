@@ -571,17 +571,23 @@ def generate_article(
                 generated_text = generated_text.replace(_old, _new)
 
             # c3) Fix subtitle heading level — LLM sometimes writes `# Subtitle` or
-            # `## Subtitle` inside a section body instead of the required `### Subtitle`.
-            # Correct any single-hash line that appears after the article headline.
+            # `## Subtitle` right after the headline instead of the required `### Subtitle`.
             _fixed_lines = []
             _headline_seen = False
+            _subtitle_fixed = False
             for _line in generated_text.splitlines():
-                if not _headline_seen and _line.startswith("# ") and not _line.startswith("## "):
+                _stripped = _line.strip()
+                if not _headline_seen and _stripped.startswith("# ") and not _stripped.startswith("## "):
                     _headline_seen = True
                     _fixed_lines.append(_line)
-                elif _headline_seen and _line.startswith("# ") and not _line.startswith("## "):
-                    # Single-hash subtitle inside body — promote to ###
-                    _fixed_lines.append("##" + _line)
+                elif _headline_seen and not _subtitle_fixed and (
+                    (_stripped.startswith("# ") and not _stripped.startswith("## "))
+                    or _stripped.startswith("## ")
+                ):
+                    # Mis-levelled subtitle immediately after headline — normalise to ###
+                    _clean = _stripped.lstrip("#").strip()
+                    _fixed_lines.append(f"### {_clean}")
+                    _subtitle_fixed = True
                 else:
                     _fixed_lines.append(_line)
             generated_text = "\n".join(_fixed_lines)

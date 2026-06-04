@@ -47,6 +47,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.scrapers.news_scraper import extract_location, MAJOR_CITIES
 from src.scrapers.rss_scraper import parse_rss_feed, parse_rss_feed_async
 from src.scrapers.scrapling_fetcher import fetch_with_scrapling
+from src.scrapers.playwright_fetcher import fetch_with_playwright, close_playwright
 from src.scrapers.guardian_fetcher import fetch_guardian_articles
 
 # One-time log guard for curl_cffi fallback
@@ -347,7 +348,23 @@ async def extract_article_urls_async(source: Dict, prefer_rss: bool = True) -> L
         logger.debug(f"Using page scraping for {source_name}: {len(urls)} URLs")
         return urls
 
-    # Tier 3: Scrapling homepage fetch as last resort
+    # Tier 3: Playwright homepage fetch for js_render sources
+    if source.get('js_render'):
+        try:
+            pw_html = await fetch_with_playwright(source['url'])
+            if pw_html:
+                soup = BeautifulSoup(pw_html, 'lxml')
+                urls = _parse_article_urls_from_soup(soup, source)
+                if urls:
+                    logger.info(
+                        f"Using Playwright homepage fetch for {source_name}: "
+                        f"{len(urls)} URLs"
+                    )
+                    return urls
+        except Exception as e:
+            logger.debug(f"Playwright homepage fetch failed for {source_name}: {e}")
+
+    # Tier 4: Scrapling homepage fetch as last resort
     try:
         scrapling_html = await fetch_with_scrapling(source['url'])
         if scrapling_html:
@@ -416,24 +433,31 @@ async def _fetch_html(url: str) -> str:
             return resp.text
 
 
-async def _fetch_and_extract(url: str, source_name: str = "") -> Optional[Dict]:
+async def _fetch_and_extract(url: str, source_name: str = "", js_render: bool = False) -> Optional[Dict]:
     """
     Fetch a page and extract article content using a tiered strategy:
-      Tier 1: Scrapling anti-bot bypass (raw HTML → trafilatura)
-      Tier 2: curl_cffi / httpx fetch → trafilatura
+      Tier 1a: Playwright — for js_render=True sources (JS-heavy / anti-bot)
+      Tier 1b: Scrapling  — for known anti-bot domains when js_render=False
+      Tier 2:  curl_cffi / httpx — lightweight fallback
 
     Returns an article dict matching the legacy schema produced by
     scrape_single_article(), or None on any failure.
     """
-    # ── Tier 1: Scrapling — anti-bot bypass (primary) ──
-    scrapling_html = await fetch_with_scrapling(url)
-    if scrapling_html:
-        # Pass the HTML through the existing trafilatura extraction path
-        html_content = scrapling_html
-    else:
-        html_content = None  # existing fetch logic fills this below
+    html_content = None
 
-    # ── Tier 2: Existing fetch path (curl_cffi / httpx) ──
+    # ── Tier 1a: Playwright — primary for js_render sources ──
+    if js_render:
+        html_content = await fetch_with_playwright(url)
+        if html_content:
+            logger.debug(f"Playwright tier succeeded for {url[:60]}")
+
+    # ── Tier 1b: Scrapling — anti-bot bypass for non-js_render domains ──
+    if html_content is None:
+        scrapling_html = await fetch_with_scrapling(url)
+        if scrapling_html:
+            html_content = scrapling_html
+
+    # ── Tier 2: curl_cffi / httpx ──
     if html_content is None:
         try:
             html_content = await _fetch_html(url)
@@ -501,12 +525,28 @@ async def _fetch_and_extract(url: str, source_name: str = "") -> Optional[Dict]:
     except Exception:
         language = "en"
 
+    # --- Translate heading to English for non-English articles ---
+    # Use source_lang="auto" so mixed-language headings (e.g. Japanese kanji +
+    # English words) are still translated — langdetect can misclassify these as "en".
+    original_heading = heading
+    has_non_ascii = heading and any(ord(c) > 127 for c in heading)
+    if heading and (has_non_ascii or (language and language != "en")):
+        try:
+            from src.translation.translator import translate_text
+            translated = translate_text(heading, source_lang="auto", target_lang="en")
+            if translated and translated.strip() and translated.strip() != heading:
+                heading = translated.strip()
+                logger.debug(f"Heading translated ({language}→en): {heading[:60]}")
+        except Exception as _te:
+            logger.debug(f"Heading translation skipped: {_te}")
+
     # --- Location extraction ---
     location = extract_location(story)
 
     # --- Build the article dict (schema-identical to news_scraper output) ---
     article_data = {
         "heading": heading,
+        "original_heading": original_heading if original_heading != heading else "",
         "story": story,
         "source_url": url,
         "source_name": source_name,
@@ -630,18 +670,19 @@ async def _scrape_news_batch_async(
             prefetched_urls[sname] = result
     # --- END Fix 1 pre-fetch ---
 
-    async def _bounded_fetch(url, source_name, rate_limit):
+    async def _bounded_fetch(url, source_name, rate_limit, js_render=False):
         async with sem:
             await asyncio.sleep(rate_limit)
             try:
-                return await _fetch_and_extract(url, source_name)
+                return await _fetch_and_extract(url, source_name, js_render=js_render)
             except Exception as e:
                 logger.error(f"Failed to scrape {url}: [{type(e).__name__}] {e}")
                 return None
 
     for source in sources:
         source_name = source.get('name', 'Unknown')
-        logger.info(f"\n📰 Scraping: {source_name} (Priority: {source.get('priority', 5)})")
+        js_render = bool(source.get('js_render', False))
+        logger.info(f"\n📰 Scraping: {source_name} (Priority: {source.get('priority', 5)}){' [JS]' if js_render else ''}")
 
         try:
             # Get article URLs from pre-fetched results
@@ -661,7 +702,7 @@ async def _scrape_news_batch_async(
 
             # Launch concurrent fetches for this source
             tasks = [
-                _bounded_fetch(url, source_name, rate_limit)
+                _bounded_fetch(url, source_name, rate_limit, js_render=js_render)
                 for url in article_urls
             ]
             results = await asyncio.gather(*tasks, return_exceptions=False)
@@ -727,6 +768,8 @@ async def _scrape_news_batch_async(
         logger.warning(f"   ⚠️  Low yield     : {', '.join(low_yield_sources)}")
 
     _persist_source_health(session_id, source_stats)
+
+    await close_playwright()
 
     return articles
 

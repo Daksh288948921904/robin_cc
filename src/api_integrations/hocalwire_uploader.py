@@ -415,16 +415,36 @@ def upload_to_hocalwire(
     
     # Validations
     heading = article.get('heading', '')
-    sub_heading = article.get('sub_heading', '')
+    # sub_heading key used by article_generator / prompt_builder;
+    # subtitle key used by multi_source_summary — check both
+    sub_heading = (
+        article.get('sub_heading', '')
+        or article.get('subtitle', '')
+        or ''
+    ).strip()
+    if len(sub_heading) > 160:
+        sub_heading = sub_heading[:157] + "..."
     story = article.get('story', '')
-    
+
     if not heading or not story:
         logger.error("Article missing heading or story")
         return False
-    
+
+    if sub_heading:
+        logger.info(f"Subtitle to push: {sub_heading[:80]}")
+    else:
+        logger.warning("No subtitle found in article dict (sub_heading/subtitle both empty)")
+
+    # HocalWire auto-extracts the first paragraph of `story` as the italic lede
+    # shown below the title — it does NOT render the `sub_heading` field there.
+    # Prepend the subtitle so HocalWire's extraction picks up our subtitle.
+    if sub_heading:
+        story = f"{sub_heading}\n\n{story}"
+
     # Convert markdown to HTML for better CMS display
     formatted_story = format_article_for_cms(story)
-    
+    logger.info(f"Story HTML (first 200 chars): {formatted_story[:200]}")
+
     # Extract intelligent location and category from article content
     if LOCATION_EXTRACTOR_AVAILABLE:
         try:
@@ -470,7 +490,7 @@ def upload_to_hocalwire(
 
     payload = {
         "heading": heading,
-        "sub_heading": sub_heading,  # Add subheading mapping here
+        "sub_heading": sub_heading,
         "mediaIds": image_url,
         "story": formatted_story,  # Use HTML-formatted content
         "categoryId": category_id,  # Use dynamically extracted category

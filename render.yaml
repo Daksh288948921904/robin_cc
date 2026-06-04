@@ -6,7 +6,7 @@ services:
     repo: https://github.com/Jkavya100/osi-news-automation
     branch: main
     schedule: "0 */3 * * *"       # every 3 hours (UTC)
-    buildCommand: pip install -r requirements-render.txt && scrapling install
+    buildCommand: pip install -r requirements-render.txt && scrapling install && playwright install chromium --with-deps
     startCommand: python run_automation.py --mode once
     envVars:
       # ---- Groq LLM ----
