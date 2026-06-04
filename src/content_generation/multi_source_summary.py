@@ -322,6 +322,22 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
         for v in (title, subtitle, byline, location, category)
         if v and v.strip()
     }
+    # Patterns that should never appear as standalone lines in the body
+    _DATE_PAT     = re.compile(
+        r'^(?:'
+        r'(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)[,\s]+'
+        r'|(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d'
+        r'|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}'
+        r'|\d{4}-\d{2}-\d{2}'
+        r')',
+        re.IGNORECASE,
+    )
+    # A "location dateline" line: short (≤6 words), no sentence-ending verb,
+    # matches known location vocabulary or ends with a country/city indicator.
+    _DATELINE_PAT = re.compile(
+        r'^(?:[A-Z][a-zA-Z\s\.\-]+,\s*[A-Z][a-zA-Z\s]+|[A-Z][A-Z\s]+)$'
+    )
+
     _cleaned_lines = []
     for _line in body.splitlines():
         _s = _line.strip()
@@ -330,6 +346,13 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
         if _s_clean.lower() in _meta_to_strip:
             continue
         if re.match(r'^robin\s+cc\s*\|', _s_clean, re.IGNORECASE):
+            continue
+        # Drop standalone date lines (e.g. "June 4, 2026", "Thursday, June 4")
+        if _DATE_PAT.match(_s_clean):
+            continue
+        # Drop standalone dateline/location lines (e.g. "Washington D.C.", "NEW DELHI, India")
+        # Only drop short lines (≤ 6 words) that look like a city/country dateline
+        if _DATELINE_PAT.match(_s_clean) and len(_s_clean.split()) <= 6:
             continue
         _cleaned_lines.append(_line)
     body = "\n".join(_cleaned_lines).strip()
