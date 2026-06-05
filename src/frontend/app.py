@@ -433,6 +433,32 @@ def generate_summary(idx: int):
     return jsonify({'status': 'success', 'summary': summary})
 
 
+@app.route('/api/articles/<int:idx>/news-check', methods=['POST'])
+@login_required
+def news_check_route(idx: int):
+    """
+    Run three-level news verification on article[idx]:
+      Level 1 — content credibility (concrete/speculative/misleading/false)
+      Level 2 — fake-news likelihood (credible/unverified/potentially_misleading/likely_false)
+      Level 3 — trending (coverage-count based, instant)
+    """
+    if idx < 0 or idx >= len(SCRAPED_ARTICLES):
+        return jsonify({'status': 'error', 'message': 'Article not found'}), 404
+
+    key = str(idx)
+    article  = SCRAPED_ARTICLES[idx]
+    coverage = COVERAGES.get(key, [])
+
+    try:
+        from src.content_generation.news_checker import analyze_article
+        result = analyze_article(article, coverage)
+        return jsonify({'status': 'success', 'check': result})
+    except Exception as e:
+        tb = traceback.format_exc()
+        app.logger.error('News check error: %s\n%s', e, tb)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/api/articles/<int:idx>/timeline', methods=['POST'])
 @login_required
 def generate_timeline_route(idx: int):

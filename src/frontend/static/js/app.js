@@ -1397,6 +1397,72 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// ── News Verification ────────────────────────────────────────
+async function runNewsCheck() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) return;
+  const sec = $('news-check-section');
+  if (!sec) return;
+
+  sec.innerHTML = `<div class="nc-loading"><span class="nc-spinner"></span><span>Analysing article…</span></div>`;
+
+  try {
+    const res  = await fetch(`/api/articles/${realIdx}/news-check`, {method:'POST'});
+    const data = await res.json();
+    if (data.status !== 'success') { sec.innerHTML = `<div class="nc-error">Verification failed: ${esc(data.message||'')}</div>`; return; }
+
+    const c = data.check;
+
+    const credColor = {concrete:'nc-green', speculative:'nc-yellow', misleading:'nc-orange', false:'nc-red'}[c.credibility] || 'nc-gray';
+    const fakeColor = {credible:'nc-green', unverified:'nc-gray', potentially_misleading:'nc-orange', likely_false:'nc-red'}[c.fake_check] || 'nc-gray';
+    const trendColor = c.trending === 'trending' ? 'nc-blue' : 'nc-gray';
+    const overallColor = {VERIFIED:'nc-green','LIKELY FALSE':'nc-red','USE CAUTION':'nc-orange',UNVERIFIED:'nc-gray'}[c.overall] || 'nc-gray';
+
+    const credLabel  = c.credibility.replace(/_/g,' ').toUpperCase();
+    const fakeLabel  = c.fake_check.replace(/_/g,' ').toUpperCase();
+    const trendLabel = c.trending === 'trending' ? 'TRENDING' : 'NOT TRENDING';
+
+    const redFlagsHtml = c.red_flags && c.red_flags.length
+      ? `<div class="nc-flags"><span class="nc-flags-label">⚠ Red flags</span>${c.red_flags.map(f=>`<span class="nc-flag">${esc(f)}</span>`).join('')}</div>`
+      : '';
+
+    const claimsHtml = c.key_claims && c.key_claims.length
+      ? `<div class="nc-claims"><span class="nc-claims-label">Key claims</span><ul>${c.key_claims.map(cl=>`<li>${esc(cl)}</li>`).join('')}</ul></div>`
+      : '';
+
+    sec.innerHTML = `
+      <div class="nc-overall ${overallColor}">
+        <span class="nc-overall-label">Overall</span>
+        <span class="nc-overall-value">${esc(c.overall)}</span>
+      </div>
+      <div class="nc-rows">
+        <div class="nc-row">
+          <span class="nc-row-label">Credibility</span>
+          <span class="nc-badge ${credColor}">${credLabel}</span>
+          <span class="nc-score">${c.credibility_score}/100</span>
+        </div>
+        <div class="nc-reason">${esc(c.credibility_reason)}</div>
+
+        <div class="nc-row">
+          <span class="nc-row-label">Authenticity</span>
+          <span class="nc-badge ${fakeColor}">${fakeLabel}</span>
+        </div>
+        <div class="nc-reason">${esc(c.fake_reason)}</div>
+
+        <div class="nc-row">
+          <span class="nc-row-label">Trending</span>
+          <span class="nc-badge ${trendColor}">${trendLabel}</span>
+          <span class="nc-source-count">${c.source_count} source${c.source_count!==1?'s':''}</span>
+        </div>
+        <div class="nc-reason">${esc(c.trending_reason)}</div>
+      </div>
+      ${redFlagsHtml}${claimsHtml}
+      <button class="nc-rerun-btn" onclick="runNewsCheck()">Re-run</button>`;
+  } catch(e) {
+    sec.innerHTML = `<div class="nc-error">Network error: ${esc(String(e))}</div>`;
+  }
+}
+
 // ── Timeline ─────────────────────────────────────────────────
 async function generateTimeline(realIdx) {
   const tlOuter = $('timeline-outer');
