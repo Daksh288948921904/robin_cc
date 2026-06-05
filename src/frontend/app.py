@@ -32,6 +32,9 @@ app = Flask(__name__,
             template_folder='templates',
             static_folder='static')
 
+# Disable static file caching so CSS/JS changes are always picked up immediately
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
 # ── Secret key (required for session security in production) ────
 app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(32)
 
@@ -222,9 +225,15 @@ def _run_scrape(max_articles: int):
 @app.route('/')
 @login_required
 def index():
-    return render_template('index.html',
+    import time
+    from flask import make_response
+    resp = make_response(render_template('index.html',
                            article_count=len(SCRAPED_ARTICLES),
-                           last_updated=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                           last_updated=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                           static_v=str(int(time.time()))))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 
 @app.route('/api/articles')
@@ -1198,8 +1207,8 @@ if __name__ == '__main__':
     print("="*60)
     print(f"\nProject root: {PROJECT_ROOT}")
     print(f"Output dir:   {OUTPUT_DIR}")
-    print("\nStarting server at http://localhost:5001")
+    print("\nStarting server at http://localhost:5004")
     print("Press Ctrl+C to stop\n")
 
-    app.run(debug=False, host='0.0.0.0', port=5001, use_reloader=False,
+    app.run(debug=False, host='0.0.0.0', port=5004, use_reloader=False,
             threaded=True)

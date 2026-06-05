@@ -188,12 +188,6 @@ def generate_summary(
         Dict with keys: title, byline, body, sources_list, generated_at
         or None on failure.
     """
-    try:
-        client = _get_groq_client()
-    except Exception as e:
-        logger.error("Groq client init failed: %s", e)
-        raise
-
     prompt = _build_prompt(main_article, coverage)
 
     system_msg = (
@@ -206,35 +200,18 @@ def generate_summary(
         "Follow the output format exactly. Never skip a field."
     )
 
-    # Try primary model, then fall back to fast 8B model on rate limit
-    models_to_try = [model, "llama-3.1-8b-instant"]
-    last_exc = None
-    for attempt_model in models_to_try:
-        try:
-            response = client.chat.completions.create(
-                model=attempt_model,
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.4,
-                max_tokens=2048,
-            )
-            if attempt_model != model:
-                logger.info(f"Used fallback model {attempt_model} (primary rate-limited)")
-            raw_text = response.choices[0].message.content.strip()
-            return _parse_response(raw_text, main_article, coverage)
-        except Exception as exc:
-            error_str = str(exc)
-            if 'rate_limit_exceeded' in error_str or '429' in error_str:
-                logger.warning(f"Model {attempt_model} rate-limited, trying next fallback...")
-                last_exc = exc
-                continue
-            logger.error("Groq API call failed: %s", exc)
-            raise
-
-    logger.error("All models rate-limited: %s", last_exc)
-    raise last_exc
+    from src.utils.groq_pool import groq_completion
+    response = groq_completion(
+        messages=[
+            {"role": "system", "content": system_msg},
+            {"role": "user",   "content": prompt},
+        ],
+        model=model,
+        temperature=0.4,
+        max_tokens=2048,
+    )
+    raw_text = response.choices[0].message.content.strip()
+    return _parse_response(raw_text, main_article, coverage)
 
 
 def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:

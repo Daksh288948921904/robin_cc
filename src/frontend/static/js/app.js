@@ -446,10 +446,12 @@ function openReader(i) {
   $('reader-raw').textContent = JSON.stringify(a,null,2);
   $('reader-raw').classList.add('hidden');
 
-  // Reset coverage, summary, timeline, social panels
+  // Reset coverage, summary, timeline, news-check, social panels
   $('coverage-section').innerHTML = coverageLoadingHTML();
   $('summary-section').innerHTML  = summaryLoadingHTML();
   $('timeline-section').innerHTML = timelineLoadingHTML();
+  const ncSec = $('news-check-section');
+  if (ncSec) ncSec.innerHTML = `<div class="nc-loading"><span class="nc-spinner"></span><span>Waiting for briefing…</span></div>`;
   const tlOuter = $('timeline-outer');
   if (tlOuter) tlOuter.style.display = 'none';
   const twOuter = $('social-twitter-outer');
@@ -767,6 +769,9 @@ async function generateSummary(realIdx) {
     if (pb) pb.style.display = '';
 
     EDIT_MODE = false;
+
+    // Auto-run news verification as soon as the briefing is ready
+    runNewsCheck();
   } catch(e) {
     $('summary-section').innerHTML = `<div class="coverage-empty">Network error: ${esc(e.message)}</div>`;
   }
@@ -1413,14 +1418,16 @@ async function runNewsCheck() {
 
     const c = data.check;
 
-    const credColor = {concrete:'nc-green', speculative:'nc-yellow', misleading:'nc-orange', false:'nc-red'}[c.credibility] || 'nc-gray';
-    const fakeColor = {credible:'nc-green', unverified:'nc-gray', potentially_misleading:'nc-orange', likely_false:'nc-red'}[c.fake_check] || 'nc-gray';
+    const credColor  = {concrete:'nc-green', speculative:'nc-yellow', misleading:'nc-orange', false:'nc-red'}[c.credibility] || 'nc-gray';
+    const fakeColor  = {credible:'nc-green', unverified:'nc-gray', potentially_misleading:'nc-orange', likely_false:'nc-red'}[c.fake_check] || 'nc-gray';
     const trendColor = c.trending === 'trending' ? 'nc-blue' : 'nc-gray';
+    const toneColor  = {positive:'nc-green', negative:'nc-red', neutral:'nc-gray'}[c.tone] || 'nc-gray';
     const overallColor = {VERIFIED:'nc-green','LIKELY FALSE':'nc-red','USE CAUTION':'nc-orange',UNVERIFIED:'nc-gray'}[c.overall] || 'nc-gray';
 
     const credLabel  = c.credibility.replace(/_/g,' ').toUpperCase();
     const fakeLabel  = c.fake_check.replace(/_/g,' ').toUpperCase();
     const trendLabel = c.trending === 'trending' ? 'TRENDING' : 'NOT TRENDING';
+    const toneLabel  = (c.tone || 'neutral').toUpperCase();
 
     const redFlagsHtml = c.red_flags && c.red_flags.length
       ? `<div class="nc-flags"><span class="nc-flags-label">⚠ Red flags</span>${c.red_flags.map(f=>`<span class="nc-flag">${esc(f)}</span>`).join('')}</div>`
@@ -1432,30 +1439,51 @@ async function runNewsCheck() {
 
     sec.innerHTML = `
       <div class="nc-overall ${overallColor}">
-        <span class="nc-overall-label">Overall</span>
-        <span class="nc-overall-value">${esc(c.overall)}</span>
+        <div class="nc-overall-left">
+          <span class="nc-overall-label">Overall Verdict</span>
+          <span class="nc-overall-value">${esc(c.overall)}</span>
+        </div>
+        <div class="nc-overall-score">${c.credibility_score}<span>/100</span></div>
       </div>
-      <div class="nc-rows">
-        <div class="nc-row">
-          <span class="nc-row-label">Credibility</span>
-          <span class="nc-badge ${credColor}">${credLabel}</span>
-          <span class="nc-score">${c.credibility_score}/100</span>
-        </div>
-        <div class="nc-reason">${esc(c.credibility_reason)}</div>
 
-        <div class="nc-row">
-          <span class="nc-row-label">Authenticity</span>
-          <span class="nc-badge ${fakeColor}">${fakeLabel}</span>
+      <div class="nc-grid">
+        <div class="nc-card ${credColor}">
+          <div class="nc-card-header">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1l1.3 2.6 2.9.4-2.1 2 .5 2.9L6 7.5 3.4 8.9l.5-2.9L1.8 4l2.9-.4L6 1z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>
+            <span>Credibility</span>
+          </div>
+          <div class="nc-card-badge">${credLabel}</div>
+          <div class="nc-card-reason">${esc(c.credibility_reason)}</div>
         </div>
-        <div class="nc-reason">${esc(c.fake_reason)}</div>
 
-        <div class="nc-row">
-          <span class="nc-row-label">Trending</span>
-          <span class="nc-badge ${trendColor}">${trendLabel}</span>
-          <span class="nc-source-count">${c.source_count} source${c.source_count!==1?'s':''}</span>
+        <div class="nc-card ${fakeColor}">
+          <div class="nc-card-header">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.1"/><path d="M6 3.5v3M6 8h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            <span>Authenticity</span>
+          </div>
+          <div class="nc-card-badge">${fakeLabel}</div>
+          <div class="nc-card-reason">${esc(c.fake_reason)}</div>
         </div>
-        <div class="nc-reason">${esc(c.trending_reason)}</div>
+
+        <div class="nc-card ${toneColor}">
+          <div class="nc-card-header">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 9c1-2 2-3 4-3s3 1 4 3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><circle cx="4" cy="4.5" r="1" fill="currentColor"/><circle cx="8" cy="4.5" r="1" fill="currentColor"/></svg>
+            <span>Tone</span>
+          </div>
+          <div class="nc-card-badge">${toneLabel}</div>
+          <div class="nc-card-reason">${esc(c.tone_reason)}</div>
+        </div>
+
+        <div class="nc-card ${trendColor}">
+          <div class="nc-card-header">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 9l3-3 2.5 2L10 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Trending</span>
+          </div>
+          <div class="nc-card-badge">${trendLabel}</div>
+          <div class="nc-card-reason">${esc(c.trending_reason)}</div>
+        </div>
       </div>
+
       ${redFlagsHtml}${claimsHtml}
       <button class="nc-rerun-btn" onclick="runNewsCheck()">Re-run</button>`;
   } catch(e) {

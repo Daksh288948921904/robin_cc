@@ -16,15 +16,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Groq client ───────────────────────────────────────────────────────────────
-
-def _get_groq():
-    from groq import Groq
-    key = os.getenv("GROQ_API_KEY", "")
-    if not key:
-        raise ValueError("GROQ_API_KEY not set")
-    return Groq(api_key=key)
-
 _GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 # ── Prompt ────────────────────────────────────────────────────────────────────
@@ -50,6 +41,8 @@ Return this exact JSON structure:
   "credibility_reason": "<one sentence explaining the rating>",
   "fake_check": "credible|unverified|potentially_misleading|likely_false",
   "fake_reason": "<one sentence explaining the fake-check verdict>",
+  "tone": "positive|negative|neutral",
+  "tone_reason": "<one sentence explaining the tone>",
   "key_claims": ["<claim 1>", "<claim 2>"],
   "red_flags": ["<flag 1 or empty list if none>"]
 }}
@@ -63,7 +56,11 @@ Definitions:
 - credible: story checks out, well-sourced, no red flags
 - unverified: story could be true but lacks enough sourcing to confirm
 - potentially_misleading: framing or context concerns, check before publishing
-- likely_false: significant evidence contradicts the claims"""
+- likely_false: significant evidence contradicts the claims
+
+- positive: article conveys optimistic, constructive, or uplifting framing
+- negative: article conveys alarming, critical, threatening, or distressing framing
+- neutral: factual, balanced reporting with no strong emotional charge"""
 
 
 def analyze_article(article: Dict, coverage: List[Dict]) -> Dict:
@@ -97,39 +94,40 @@ def analyze_article(article: Dict, coverage: List[Dict]) -> Dict:
         + ("…" if len(source_names) > 4 else "")
     )
 
-    # ── Levels 1 & 2: Groq LLM ───────────────────────────────────────────────
+    # ── Levels 1 & 2: Groq LLM (key rotation + model fallback via pool) ──────
     llm_result = {}
+    _prompt = _PROMPT_TEMPLATE.format(
+        headline=headline,
+        body_excerpt=body_excerpt,
+        source_count=source_count,
+        source_names=", ".join(source_names) or "Unknown",
+    )
     try:
-        client = _get_groq()
-        prompt = _PROMPT_TEMPLATE.format(
-            headline=headline,
-            body_excerpt=body_excerpt,
-            source_count=source_count,
-            source_names=", ".join(source_names) or "Unknown",
-        )
-        resp = client.chat.completions.create(
-            model=_GROQ_MODEL,
+        from src.utils.groq_pool import groq_completion
+        resp = groq_completion(
             messages=[
                 {"role": "system", "content": _SYSTEM},
-                {"role": "user",   "content": prompt},
+                {"role": "user",   "content": _prompt},
             ],
+            model=_GROQ_MODEL,
             temperature=0.1,
             max_tokens=512,
         )
         raw = resp.choices[0].message.content.strip()
-        # Strip any accidental markdown fences
         raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
         raw = re.sub(r"\s*```$", "", raw, flags=re.MULTILINE)
         llm_result = json.loads(raw)
         logger.info(f"News check credibility={llm_result.get('credibility')} fake={llm_result.get('fake_check')} for: {headline[:60]}")
     except Exception as e:
-        logger.warning(f"News checker LLM failed: {e}")
+        logger.warning(f"News checker pool exhausted: {e}")
         llm_result = {
             "credibility":        "unverified",
             "credibility_score":  50,
-            "credibility_reason": "LLM analysis unavailable.",
+            "credibility_reason": "All API keys rate-limited — please try again in a moment.",
             "fake_check":         "unverified",
-            "fake_reason":        "LLM analysis unavailable.",
+            "fake_reason":        "All API keys rate-limited — please try again in a moment.",
+            "tone":               "neutral",
+            "tone_reason":        "All API keys rate-limited — please try again in a moment.",
             "key_claims":         [],
             "red_flags":          [],
         }
@@ -156,6 +154,8 @@ def analyze_article(article: Dict, coverage: List[Dict]) -> Dict:
         "credibility_reason": llm_result.get("credibility_reason", ""),
         "fake_check":         fake,
         "fake_reason":        llm_result.get("fake_reason", ""),
+        "tone":               llm_result.get("tone", "neutral"),
+        "tone_reason":        llm_result.get("tone_reason", ""),
         "key_claims":         llm_result.get("key_claims", []),
         "red_flags":          llm_result.get("red_flags", []),
         "trending":           trending_label,
