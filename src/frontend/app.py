@@ -1179,6 +1179,56 @@ def get_article_status(idx: int):
     })
 
 
+@app.route('/api/articles/<int:idx>/chat', methods=['POST'])
+@login_required
+def article_chat(idx: int):
+    if idx < 0 or idx >= len(SCRAPED_ARTICLES):
+        return jsonify({'status': 'error', 'message': 'Article not found'}), 404
+
+    body = request.get_json(silent=True) or {}
+    user_message = (body.get('message') or '').strip()
+    history = body.get('history') or []  # list of {role, content}
+
+    if not user_message:
+        return jsonify({'status': 'error', 'message': 'Empty message'}), 400
+
+    article = SCRAPED_ARTICLES[idx]
+    title   = article.get('heading') or article.get('title', '')
+    content = article.get('story') or article.get('content') or article.get('body') or ''
+    source  = article.get('source_name', '')
+
+    system_prompt = (
+        f"You are a news analyst assistant. The user is reading the following article and may ask questions about it or related topics.\n\n"
+        f"SOURCE: {source}\nTITLE: {title}\n\nARTICLE:\n{content[:6000]}\n\n"
+        f"Instructions:\n"
+        f"- If the question is directly answered in the article, quote or summarise from it.\n"
+        f"- If the question is related to the article's topic but not explicitly covered, answer using your knowledge and note that the article doesn't mention it.\n"
+        f"- If the question is completely unrelated to the article, politely redirect the user to ask something about the article.\n"
+        f"- Always be concise and factual."
+    )
+
+    messages = [{'role': 'system', 'content': system_prompt}]
+    for h in history[-10:]:  # keep last 10 turns for context
+        if h.get('role') in ('user', 'assistant') and h.get('content'):
+            messages.append({'role': h['role'], 'content': h['content']})
+    messages.append({'role': 'user', 'content': user_message})
+
+    try:
+        from src.utils.groq_pool import groq_completion
+        resp = groq_completion(
+            messages=messages,
+            model='llama-3.3-70b-versatile',
+            temperature=0.3,
+            max_tokens=512,
+        )
+        answer = resp.choices[0].message.content.strip()
+        return jsonify({'status': 'success', 'answer': answer})
+    except Exception as e:
+        tb = traceback.format_exc()
+        app.logger.error('Article chat error: %s\n%s', e, tb)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 def save_articles_to_json(articles):
     ensure_output_dir()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

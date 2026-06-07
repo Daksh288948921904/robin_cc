@@ -288,6 +288,23 @@
         <div id="summary-section"></div>
       </section>
 
+      <!-- Article Chatbot -->
+      <section class="reader-section article-chat-outer" id="article-chat-outer">
+        <div class="reader-section-label">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M11 1H2a1 1 0 00-1 1v6a1 1 0 001 1h1.5l1.5 2 1.5-2H11a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/></svg>
+          Ask the Article
+        </div>
+        <div class="article-chat-wrap" id="article-chat-wrap">
+          <div class="chat-messages" id="chat-messages"></div>
+          <form class="chat-input-row" id="chat-form" onsubmit="sendChatMessage(event)">
+            <input class="chat-input" id="chat-input" type="text" placeholder="Ask anything about this article…" autocomplete="off"/>
+            <button class="chat-send-btn" type="submit" id="chat-send-btn">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1 6.5L12 1l-4 5.5 4 5.5L1 6.5z" fill="currentColor"/></svg>
+            </button>
+          </form>
+        </div>
+      </section>
+
       <!-- News Verification -->
       <section class="reader-section news-check-outer" id="news-check-outer">
         <div class="reader-section-label">

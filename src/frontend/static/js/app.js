@@ -452,6 +452,7 @@ function openReader(i) {
   $('timeline-section').innerHTML = timelineLoadingHTML();
   const ncSec = $('news-check-section');
   if (ncSec) ncSec.innerHTML = `<div class="nc-loading"><span class="nc-spinner"></span><span>Waiting for briefing…</span></div>`;
+  resetArticleChat();
   const tlOuter = $('timeline-outer');
   if (tlOuter) tlOuter.style.display = 'none';
   const twOuter = $('social-twitter-outer');
@@ -2088,6 +2089,68 @@ function renderActivityView() {
     }
   });
 })();
+
+// ── Article Chatbot ───────────────────────────────────────────
+let CHAT_HISTORY = [];
+
+function resetArticleChat() {
+  CHAT_HISTORY = [];
+  const msgs = $('chat-messages');
+  if (msgs) msgs.innerHTML = '';
+  const inp = $('chat-input');
+  if (inp) inp.value = '';
+}
+
+function appendChatBubble(role, text) {
+  const msgs = $('chat-messages');
+  if (!msgs) return;
+  const div = document.createElement('div');
+  div.className = `chat-bubble chat-${role}`;
+  div.textContent = text;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function sendChatMessage(e) {
+  e.preventDefault();
+  const inp  = $('chat-input');
+  const btn  = $('chat-send-btn');
+  const text = inp.value.trim();
+  if (!text || CURRENT_REAL_IDX == null) return;
+
+  appendChatBubble('user', text);
+  CHAT_HISTORY.push({role: 'user', content: text});
+  inp.value = '';
+  btn.disabled = true;
+
+  const thinking = document.createElement('div');
+  thinking.className = 'chat-bubble chat-assistant chat-thinking';
+  thinking.textContent = '…';
+  $('chat-messages').appendChild(thinking);
+  $('chat-messages').scrollTop = $('chat-messages').scrollHeight;
+
+  try {
+    const res  = await fetch(`/api/articles/${CURRENT_REAL_IDX}/chat`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: text, history: CHAT_HISTORY.slice(0, -1)}),
+    });
+    const data = await res.json();
+    thinking.remove();
+    if (data.status === 'success') {
+      appendChatBubble('assistant', data.answer);
+      CHAT_HISTORY.push({role: 'assistant', content: data.answer});
+    } else {
+      appendChatBubble('assistant', 'Error: ' + (data.message || 'Unknown error'));
+    }
+  } catch (err) {
+    thinking.remove();
+    appendChatBubble('assistant', 'Network error. Please try again.');
+  } finally {
+    btn.disabled = false;
+    inp.focus();
+  }
+}
 
 // ── Init ──────────────────────────────────────────────────────
 loadArticles();
