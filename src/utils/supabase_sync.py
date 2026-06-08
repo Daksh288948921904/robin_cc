@@ -117,19 +117,8 @@ def insert_published(idx, heading, sub_heading, hocalwire_id='',
     if not _init():
         return
     try:
-        # Resolve article UUID
-        r = requests.get(
-            _url('articles'),
-            headers={**_headers, 'Prefer': ''},
-            params={'select': 'id', 'server_idx': f'eq.{idx}', 'limit': '1'},
-            timeout=10,
-        )
-        r.raise_for_status()
-        rows = r.json()
-        article_uuid = rows[0]['id'] if rows else None
-
         payload = {
-            'article_id':   article_uuid,
+            'server_idx':   idx,
             'heading':      heading,
             'sub_heading':  sub_heading,
             'hocalwire_id': hocalwire_id,
@@ -139,8 +128,10 @@ def insert_published(idx, heading, sub_heading, hocalwire_id='',
             'body_html':    body_html,
             'published_at': _now(),
         }
-        r2 = requests.post(_url('published_articles'), json=payload, headers=_headers, timeout=10)
-        r2.raise_for_status()
+        r = requests.post(_url('published_articles'), json=payload, headers=_headers, timeout=10)
+        if not r.ok:
+            log.warning('Supabase insert_published(%d) HTTP %d: %s', idx, r.status_code, r.text)
+            return
         log.info('Supabase: recorded publish for article idx=%d', idx)
     except Exception as e:
         log.warning('Supabase insert_published(%d) failed: %s', idx, e)
