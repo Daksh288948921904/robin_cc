@@ -1340,8 +1340,8 @@ if __name__ == '__main__':
     print("="*60)
     print(f"\nProject root: {PROJECT_ROOT}")
     print(f"Output dir:   {OUTPUT_DIR}")
-    print("\nStarting server at http://localhost:5005")
+    print("\nStarting server at http://localhost:5006")
     print("Press Ctrl+C to stop\n")
 
-    app.run(debug=False, host='0.0.0.0', port=5005, use_reloader=False,
+    app.run(debug=False, host='0.0.0.0', port=5006, use_reloader=False,
             threaded=True)

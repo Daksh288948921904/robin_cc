@@ -15,7 +15,7 @@ import multiprocessing, os
 
 # ── Binding ──────────────────────────────────────────────────
 # Render assigns a dynamic PORT env var; fall back to 5001 for local
-bind        = f"0.0.0.0:{os.getenv('PORT', '5005')}"
+bind        = f"0.0.0.0:{os.getenv('PORT', '5006')}"
 backlog     = 128
 
 # ── Workers ──────────────────────────────────────────────────
