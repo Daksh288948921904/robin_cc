@@ -142,8 +142,8 @@ Your TITLE must be an entirely original headline: new angle, stronger verb, or t
 
 ━━━ OUTPUT FORMAT (follow exactly — do not add or remove any field) ━━━
 
-TITLE: <your ORIGINAL headline — 8–14 words, must differ from every banned headline above>
-SUBTITLE: <one sentence, max 140 characters, synthesising the story's core significance>
+TITLE: <your ORIGINAL headline — 5-7 words not more that 70-80 charcters, must differ from every banned headline above>
+SUBTITLE: <one full sentence, 120–180 characters, expanding on the title with the key actors, stakes, or development that the headline could not fit — never a rephrasing of the title>
 BYLINE: robin cc | {today}
 LOCATION: <most specific city or country dateline you can derive from the content>
 CATEGORY: <single best-fit label — World / Technology / Politics / Sports / Business / Entertainment / Science / Health / Environment / Crime / Society / Comedy>
