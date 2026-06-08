@@ -140,10 +140,17 @@ These source headlines are BANNED — do not copy, paraphrase, or lightly rephra
 {forbidden_block}
 Your TITLE must be an entirely original headline: new angle, stronger verb, or the single most important CONSEQUENCE of the story that the source headlines missed. Ask yourself: what changes because of this story? Start there.
 
+━━━ SUBTITLE RULE (CRITICAL — ENFORCED) ━━━
+The SUBTITLE must be a COMPLETE, DETAILED sentence of 120–180 characters.
+It must name at least one key actor AND one specific consequence or development.
+It must NOT repeat or lightly rephrase the title.
+WRONG:  "Experts warn of impending monetary policy shift"  ← too short, too vague
+RIGHT:  "The Federal Reserve is expected to raise interest rates by 50 basis points next week as inflation data forces policymakers to act faster than markets anticipated."
+
 ━━━ OUTPUT FORMAT (follow exactly — do not add or remove any field) ━━━
 
-TITLE: <your ORIGINAL headline — 5-7 words not more that 70-80 charcters, must differ from every banned headline above>
-SUBTITLE: <one full sentence, 120–180 characters, expanding on the title with the key actors, stakes, or development that the headline could not fit — never a rephrasing of the title>
+TITLE: <your ORIGINAL headline — 5-7 words, 60-80 characters, must differ from every banned headline above>
+SUBTITLE: <COMPLETE sentence, 120–180 characters, names key actor + specific consequence — see SUBTITLE RULE above>
 BYLINE: robin cc | {today}
 LOCATION: <most specific city or country dateline you can derive from the content>
 CATEGORY: <single best-fit label — World / Technology / Politics / Sports / Business / Entertainment / Science / Health / Environment / Crime / Society / Comedy>
@@ -268,9 +275,25 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
 
     subtitle = subtitle_match.group(1).strip() if subtitle_match else ""
     subtitle = re.sub(r"<[^>]+>", "", subtitle).strip(' "\'')
-    subtitle = re.sub(r"\*+", "", subtitle).strip()           # strip markdown bold/italic markers
+    subtitle = re.sub(r"\*+", "", subtitle).strip()
     if subtitle.upper() in ("SUB", "SUBTITLE", "NONE", "N/A", ""):
         subtitle = ""
+
+    # Enforce minimum subtitle length — if too short, pull the lede sentence from the body
+    if len(subtitle) < 100:
+        # Extract first complete sentence from the raw body (after the --- separator)
+        sep_pos = raw.find("---")
+        body_preview = raw[sep_pos+3:].strip() if sep_pos != -1 else raw
+        # Remove section headings and grab first real sentence
+        body_preview = re.sub(r'^##[^\n]*\n', '', body_preview, flags=re.MULTILINE)
+        first_sentences = re.split(r'(?<=[.!?])\s+', body_preview.strip())
+        for sent in first_sentences:
+            sent = sent.strip()
+            if len(sent) >= 100:
+                subtitle = sent[:220].rstrip('.,;') if len(sent) > 220 else sent
+                break
+            elif len(sent) >= 60 and len(subtitle) == 0:
+                subtitle = sent  # better than nothing
 
     byline   = byline_match.group(1).strip()   if byline_match   else f"robin cc | {datetime.utcnow().strftime('%B %d, %Y')}"
     location = location_match.group(1).strip() if location_match else (main_article.get("region") or "")
