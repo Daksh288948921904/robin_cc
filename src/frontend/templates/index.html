@@ -204,29 +204,25 @@
       <div class="activity-view hidden" id="activity-view">
         <div class="activity-header">
           <div class="activity-title-row">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="3" rx="1.5" fill="currentColor" opacity=".9"/><rect x="1" y="6.5" width="9" height="2.5" rx="1" fill="currentColor" opacity=".6"/><rect x="1" y="11" width="11" height="2.5" rx="1" fill="currentColor" opacity=".6"/></svg>
-            <h2 class="activity-title">Activity Log</h2>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M8 5v4l2.5 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            <h2 class="activity-title">Published Feed</h2>
           </div>
-          <p class="activity-sub">Stories you have pushed — Hocalwire publishes and video workflow sends.</p>
+          <p class="activity-sub">Articles published to Hocalwire — auto-clears after 2 days.</p>
         </div>
-        <div id="activity-table-wrap">
+        <div id="pub-feed-wrap">
           <div class="activity-empty" id="activity-empty">
             <svg width="32" height="32" viewBox="0 0 32 32" fill="none" opacity=".3"><rect x="4" y="4" width="24" height="5" rx="2" fill="currentColor"/><rect x="4" y="13" width="16" height="4" rx="2" fill="currentColor"/><rect x="4" y="21" width="20" height="4" rx="2" fill="currentColor"/></svg>
-            <p>No activity yet — publish or send a story to see it here.</p>
+            <p>No published articles yet — they appear here when you publish to Hocalwire.</p>
           </div>
-          <table class="activity-table hidden" id="activity-table">
-            <thead>
-              <tr>
-                <th class="at-col-headline">Headline</th>
-                <th class="at-col-source">Source</th>
-                <th class="at-col-status">Hocalwire</th>
-                <th class="at-col-status">TV Script</th>
-                <th class="at-col-status">Radio</th>
-                <th class="at-col-time">Last action</th>
-              </tr>
-            </thead>
-            <tbody id="activity-tbody"></tbody>
-          </table>
+          <div class="pub-feed" id="pub-feed"></div>
+        </div>
+      </div>
+
+      <!-- Published article detail overlay -->
+      <div class="pub-detail-overlay hidden" id="pub-detail-overlay" onclick="closePubDetail(event)">
+        <div class="pub-detail-modal" id="pub-detail-modal">
+          <button class="pub-detail-close" onclick="closePubDetail()">✕</button>
+          <div id="pub-detail-content"></div>
         </div>
       </div>
     </div>
@@ -263,8 +259,8 @@
 
       <div class="reader-content">
         <div class="reader-cat-pill" id="r-cat"></div>
-        <h1 class="reader-title" id="r-title"></h1>
-        <p class="reader-deck" id="r-deck"></p>
+        <h1 class="reader-title" id="r-title" contenteditable="true" spellcheck="true" data-placeholder="Heading"></h1>
+        <p class="reader-deck" id="r-deck" contenteditable="true" spellcheck="true" data-placeholder="Subheading"></p>
         <div class="reader-byline" id="r-byline"></div>
         <div class="reader-image" id="r-image"></div>
         <div class="reader-body" id="r-body"></div>

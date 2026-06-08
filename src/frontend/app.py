@@ -108,6 +108,7 @@ def logout():
 # ── Shared state ───────────────────────────────────────────────
 SCRAPED_ARTICLES = []
 OUTPUT_DIR = PROJECT_ROOT / 'output' / 'json'
+_current_json_path = None   # path of the JSON file currently loaded
 
 # Per-article caches (keyed by article index as string)
 COVERAGES:  dict = {}   # index → list of similar article dicts
@@ -210,6 +211,9 @@ def _run_scrape(max_articles: int):
         print(f"[Scraper] Done — {len(articles)} articles from "
               f"{len({a.get('source_name') for a in articles})} sources  →  {filepath}")
 
+        from src.utils.supabase_sync import upsert_articles as _sb_upsert
+        _sb_upsert(articles)
+
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[Scraper] ERROR:\n{tb}")
@@ -252,6 +256,32 @@ def get_article(index):
     if 0 <= index < len(SCRAPED_ARTICLES):
         return jsonify({'status': 'success', 'article': SCRAPED_ARTICLES[index]})
     return jsonify({'status': 'error', 'message': 'Article not found'}), 404
+
+
+@app.route('/api/articles/<int:index>', methods=['PATCH'])
+@login_required
+def patch_article(index):
+    if not (0 <= index < len(SCRAPED_ARTICLES)):
+        return jsonify({'status': 'error', 'message': 'Article not found'}), 404
+    data = request.get_json(silent=True) or {}
+    article = SCRAPED_ARTICLES[index]
+    cached = SUMMARIES.get(str(index))
+    if 'heading' in data:
+        article['heading'] = data['heading']
+        if cached:
+            cached['title'] = data['heading']
+    if 'sub_heading' in data:
+        article['sub_heading'] = data['sub_heading']
+        if cached:
+            cached['subtitle']    = data['sub_heading']
+            cached['sub_heading'] = data['sub_heading']
+    _persist_articles()
+    try:
+        from src.utils.supabase_sync import patch_article as _sb_patch
+        _sb_patch(index, article)
+    except Exception as _se:
+        app.logger.warning("Supabase patch failed: %s", _se)
+    return jsonify({'status': 'success'})
 
 
 @app.route('/api/scrape', methods=['POST'])
@@ -327,7 +357,7 @@ def save_to_json_route():
 @app.route('/api/load', methods=['POST'])
 @login_required
 def load_from_json():
-    global SCRAPED_ARTICLES, COVERAGES, SUMMARIES, TIMELINES, SOCIALS, SOCIAL_POSTS, AI_IMAGES, AI_IMAGE_PUBLIC
+    global SCRAPED_ARTICLES, COVERAGES, SUMMARIES, TIMELINES, SOCIALS, SOCIAL_POSTS, AI_IMAGES, AI_IMAGE_PUBLIC, _current_json_path
     COVERAGES.clear()
     SUMMARIES.clear()
     TIMELINES.clear()
@@ -352,12 +382,19 @@ def load_from_json():
         with open(filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
             SCRAPED_ARTICLES = data.get('articles', data)
+        _current_json_path = filepath
 
         try:
             from src.utils.country_resolver import enrich_articles
             enrich_articles(SCRAPED_ARTICLES)
         except Exception as _ce:
             app.logger.warning("Country enrichment failed: %s", _ce)
+
+        try:
+            from src.utils.supabase_sync import upsert_articles as _sb_upsert
+            _sb_upsert(SCRAPED_ARTICLES)
+        except Exception as _se:
+            app.logger.warning("Supabase sync after load failed: %s", _se)
 
         return jsonify({
             'status': 'success',
@@ -616,6 +653,7 @@ def preview_publish_to_hocalwire(idx: int):
 
     title          = body_json.get('edited_title') or cached.get('title') or main_article.get('heading', '')
     body           = body_json.get('edited_body')  or cached.get('body', '')
+    subtitle       = (body_json.get('edited_subtitle') or cached.get('subtitle') or cached.get('sub_heading') or main_article.get('sub_heading', '')).strip()
     selected_image = body_json.get('selected_image')
     category       = body_json.get('category') or cached.get('category') or 'General'
 
@@ -640,7 +678,7 @@ def preview_publish_to_hocalwire(idx: int):
 
         article_payload = {
             'heading':     title,
-            'sub_heading': (cached.get('subtitle') or cached.get('sub_heading') or '').strip(),
+            'sub_heading': subtitle.strip(),
             'story':       body,
             'image_url':   image_url,
             'language':    'en',
@@ -660,7 +698,7 @@ def preview_publish_to_hocalwire(idx: int):
         return jsonify({
             'status':        'success',
             'heading':       title,
-            'sub_heading':   cached.get('subtitle', ''),
+            'sub_heading':   subtitle.strip(),
             'html_story':    html_story,
             'image_url':     image_url,
             'location':      location,
@@ -701,6 +739,7 @@ def publish_to_hocalwire(idx: int):
     body_json = request.get_json(silent=True) or {}
     title          = body_json.get('edited_title') or cached.get('title') or main_article.get('heading', '')
     body           = body_json.get('edited_body')  or cached.get('body', '')
+    subtitle       = (body_json.get('edited_subtitle') or cached.get('subtitle') or cached.get('sub_heading') or main_article.get('sub_heading', '')).strip()
     selected_image = body_json.get('selected_image')  # explicit picker choice from frontend
 
     if not title or not body:
@@ -721,7 +760,7 @@ def publish_to_hocalwire(idx: int):
 
         article_payload = {
             'heading':     title,
-            'sub_heading': (cached.get('subtitle') or cached.get('sub_heading') or '').strip(),
+            'sub_heading': subtitle.strip(),
             'story':       body,
             'image_url':   image_url,
             'language':    'en',
@@ -732,12 +771,23 @@ def publish_to_hocalwire(idx: int):
         success = upload_to_hocalwire(article_payload)
         if success:
             feed_id = article_payload.get('hocalwire_feed_id', '')
-            # Mirror upload status back onto the live article so the feed
-            # badge can detect it without a page reload.
             main_article['upload_status']     = 'uploaded'
             main_article['hocalwire_feed_id'] = feed_id
             main_article['uploaded_at']       = article_payload.get('uploaded_at', '')
             _record_activity(key, main_article, published_hocalwire=True)
+            try:
+                from src.utils.supabase_sync import insert_published as _sb_pub
+                _sb_pub(
+                    idx=idx,
+                    heading=title,
+                    sub_heading=subtitle,
+                    hocalwire_id=feed_id,
+                    reporter=cached.get('reporter', ''),
+                    category=cached.get('category', ''),
+                    image_url=image_url,
+                )
+            except Exception as _se:
+                app.logger.warning("Supabase insert_published failed: %s", _se)
             return jsonify({
                 'status':  'success',
                 'message': 'Published to Hocalwire successfully.',
@@ -789,6 +839,9 @@ def download_docx(idx: int):
     body_json = request.get_json(silent=True) or {}
     if body_json.get('edited_title'):
         summary['title'] = body_json['edited_title']
+    if body_json.get('edited_subtitle'):
+        summary['subtitle'] = body_json['edited_subtitle']
+        summary['sub_heading'] = body_json['edited_subtitle']
     if body_json.get('edited_body'):
         summary['body'] = body_json['edited_body']
 
@@ -1160,6 +1213,25 @@ def get_activity():
     return jsonify({'status': 'success', 'count': len(items), 'activity': items})
 
 
+@app.route('/api/published-feed')
+@login_required
+def published_feed():
+    """Return published articles from Supabase for the activity feed."""
+    try:
+        from src.utils.supabase_sync import _get_client
+        client = _get_client()
+        if not client:
+            return jsonify({'status': 'error', 'message': 'Supabase not configured'}), 500
+        res = (client.table('published_articles')
+               .select('*')
+               .order('published_at', desc=True)
+               .execute())
+        return jsonify({'status': 'success', 'articles': res.data or []})
+    except Exception as e:
+        app.logger.error('published_feed error: %s', e)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/api/articles/<int:idx>/status')
 @login_required
 def get_article_status(idx: int):
@@ -1230,6 +1302,7 @@ def article_chat(idx: int):
 
 
 def save_articles_to_json(articles):
+    global _current_json_path
     ensure_output_dir()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename = f'scraped_{timestamp}.json'
@@ -1241,8 +1314,22 @@ def save_articles_to_json(articles):
     }
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+    _current_json_path = filepath
     print(f"Saved articles to: {filepath}")
     return filepath
+
+
+def _persist_articles():
+    """Overwrite the current JSON file with the live SCRAPED_ARTICLES state."""
+    if not _current_json_path:
+        return
+    data = {
+        'scraped_at': datetime.now().isoformat(),
+        'count': len(SCRAPED_ARTICLES),
+        'articles': SCRAPED_ARTICLES,
+    }
+    with open(_current_json_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
 
 
 def load_articles(articles_list):
@@ -1257,8 +1344,8 @@ if __name__ == '__main__':
     print("="*60)
     print(f"\nProject root: {PROJECT_ROOT}")
     print(f"Output dir:   {OUTPUT_DIR}")
-    print("\nStarting server at http://localhost:5004")
+    print("\nStarting server at http://localhost:5005")
     print("Press Ctrl+C to stop\n")
 
-    app.run(debug=False, host='0.0.0.0', port=5004, use_reloader=False,
+    app.run(debug=False, host='0.0.0.0', port=5005, use_reloader=False,
             threaded=True)

@@ -412,7 +412,7 @@ function openReader(i) {
 
   const deck = a.sub_heading||a.meta_description||'';
   $('r-deck').textContent  = deck;
-  $('r-deck').style.display = deck ? '' : 'none';
+  $('r-deck').style.display = '';
 
   $('r-byline').innerHTML = [
     a.authors?.length ? `<span>✍ ${esc(a.authors.join(', '))}</span>` : '',
@@ -617,9 +617,10 @@ function bodyToHtml(raw) {
 // ── Edit mode toggle ─────────────────────────────────────────
 function toggleEditMode() {
   EDIT_MODE = !EDIT_MODE;
-  const editBtn = document.querySelector('.edit-briefing-btn');
-  const titleEl = document.querySelector('.sum-title');
-  const bodyEl  = document.querySelector('.sum-body');
+  const editBtn    = document.querySelector('.edit-briefing-btn');
+  const titleEl    = document.querySelector('.sum-title');
+  const subtitleEl = document.querySelector('.sum-subtitle');
+  const bodyEl     = document.querySelector('.sum-body');
 
   if (!editBtn || !titleEl || !bodyEl) return;
 
@@ -627,6 +628,7 @@ function toggleEditMode() {
     // Enable editing
     titleEl.contentEditable = 'true';
     titleEl.classList.add('editing');
+    if (subtitleEl) { subtitleEl.contentEditable = 'true'; subtitleEl.classList.add('editing'); }
     bodyEl.querySelectorAll('.sum-section-head, .sum-para').forEach(el => {
       el.contentEditable = 'true';
       el.classList.add('editing');
@@ -641,6 +643,7 @@ function toggleEditMode() {
     // Lock editing
     titleEl.contentEditable = 'false';
     titleEl.classList.remove('editing');
+    if (subtitleEl) { subtitleEl.contentEditable = 'false'; subtitleEl.classList.remove('editing'); }
     bodyEl.querySelectorAll('.sum-section-head, .sum-para').forEach(el => {
       el.contentEditable = 'false';
       el.classList.remove('editing');
@@ -691,8 +694,10 @@ function selectCategory(_item, category) {
 
 // ── Collect edited content from DOM ─────────────────────────
 function collectEditedContent() {
-  const titleEl = document.querySelector('.sum-title');
-  const title   = titleEl ? titleEl.textContent.trim() : '';
+  const titleEl    = document.querySelector('.sum-title');
+  const subtitleEl = document.querySelector('.sum-subtitle');
+  const title      = titleEl    ? titleEl.textContent.trim()    : '';
+  const subtitle   = subtitleEl ? subtitleEl.textContent.trim() : '';
 
   let body = '';
   const sections = document.querySelectorAll('.sum-body .sum-section');
@@ -708,7 +713,7 @@ function collectEditedContent() {
   const catBtn  = document.querySelector('.sum-category-btn');
   const category = catBtn ? catBtn.textContent.trim() : (CURRENT_SUMM && CURRENT_SUMM.category) || 'World';
 
-  return { edited_title: title, edited_body: body.trim(), category, selected_image: SELECTED_IMAGE || undefined };
+  return { edited_title: title, edited_subtitle: subtitle || undefined, edited_body: body.trim(), category, selected_image: SELECTED_IMAGE || undefined };
 }
 
 async function generateSummary(realIdx) {
@@ -739,7 +744,7 @@ async function generateSummary(realIdx) {
     $('summary-section').innerHTML = `
       <div class="summary-result">
         <h2 class="sum-title" contenteditable="false">${esc(s.title||'News Brief')}</h2>
-        ${(()=>{ const st = (s.subtitle||s.sub_heading||'').replace(/\*+/g,'').replace(/^sub$/i,'').trim(); return st ? `<p class="sum-subtitle">${esc(st)}</p>` : ''; })()}
+        <p class="sum-subtitle" contenteditable="false">${esc((s.subtitle||s.sub_heading||'').replace(/\*+/g,'').replace(/^sub$/i,'').trim())}</p>
         <button class="sum-category-btn" style="display:none" aria-hidden="true">${esc(s.category||'World')}</button>
         <div class="sum-meta-row">
           <span class="sum-badge">DNL Briefing</span>
@@ -1048,6 +1053,33 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Escape') $('video-modal-overlay').classList.remove('open');
     });
   }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  const titleEl = $('r-title');
+  const deckEl  = $('r-deck');
+
+  function saveField(el, field) {
+    const idx = CURRENT_REAL_IDX;
+    if (idx < 0) return;
+    const val = el.textContent.trim();
+    if (ALL[idx]) ALL[idx][field] = val;
+    fetch(`/api/articles/${idx}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: val }),
+    });
+  }
+
+  titleEl.addEventListener('blur', () => saveField(titleEl, 'heading'));
+  deckEl.addEventListener('blur',  () => saveField(deckEl,  'sub_heading'));
+
+  // Prevent newlines in single-line fields
+  [titleEl, deckEl].forEach(el => {
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+    });
+  });
 });
 
 async function sendVideoWorkflow() {
@@ -2005,51 +2037,98 @@ function recordActivity(realIdx, patch) {
   ACTIVITY_MAP[realIdx] = Object.assign(existing, patch, { last_at: new Date().toISOString() });
 }
 
-function refreshActivityCount() {
-  const count = Object.keys(ACTIVITY_MAP).length;
+async function refreshActivityCount() {
   const el = $('cnt-activity');
-  if (el) el.textContent = count;
+  if (!el) return;
+  try {
+    const res  = await fetch('/api/published-feed');
+    const data = await res.json();
+    const count = (data.articles || []).length;
+    el.textContent = count;
+    el.style.display = count > 0 ? '' : 'none';
+  } catch {
+    // keep whatever value is shown
+  }
 }
 
-function renderActivityView() {
-  const entries = Object.entries(ACTIVITY_MAP); // [[realIdx, data], ...]
+async function renderActivityView() {
   const emptyEl = $('activity-empty');
-  const tableEl = $('activity-table');
-  const tbody   = $('activity-tbody');
-  if (!tbody) return;
+  const feedEl  = $('pub-feed');
+  if (!feedEl) return;
 
-  if (entries.length === 0) {
-    emptyEl.style.display = '';
-    tableEl.classList.add('hidden');
-    return;
-  }
-
+  feedEl.innerHTML = `<div class="pub-feed-loading"><span class="cov-spinner"></span> Loading…</div>`;
   emptyEl.style.display = 'none';
-  tableEl.classList.remove('hidden');
 
-  // Sort by last_at descending
-  entries.sort((a, b) => (b[1].last_at || '').localeCompare(a[1].last_at || ''));
+  try {
+    const res  = await fetch('/api/published-feed');
+    const data = await res.json();
+    const articles = data.articles || [];
+    const cntEl = $('cnt-activity');
+    if (cntEl) { cntEl.textContent = articles.length; cntEl.style.display = articles.length > 0 ? '' : 'none'; }
 
-  tbody.innerHTML = entries.map(([, d]) => {
-    const hocBadge   = d.published_hocalwire
-      ? `<span class="at-badge yes-hocalwire">Yes</span>`
-      : `<span class="at-badge no">—</span>`;
-    const tvBadge    = d.tv_sent
-      ? `<span class="at-badge yes-tv">Sent</span>`
-      : `<span class="at-badge no">—</span>`;
-    const radioBadge = d.radio_sent
-      ? `<span class="at-badge yes-radio">Sent</span>`
-      : `<span class="at-badge no">—</span>`;
-    const timeStr    = d.last_at ? relTime(d.last_at) : '—';
-    return `<tr>
-      <td><div class="at-headline">${esc(d.headline)}</div></td>
-      <td><div class="at-source">${esc(d.source_name)}</div></td>
-      <td style="text-align:center">${hocBadge}</td>
-      <td style="text-align:center">${tvBadge}</td>
-      <td style="text-align:center">${radioBadge}</td>
-      <td class="at-time">${timeStr}</td>
-    </tr>`;
-  }).join('');
+    if (articles.length === 0) {
+      feedEl.innerHTML = '';
+      emptyEl.style.display = '';
+      return;
+    }
+
+    feedEl.innerHTML = articles.map((a, i) => {
+      const ago = a.published_at ? relTime(a.published_at) : '—';
+      const expiry = a.published_at ? (() => {
+        const ms = new Date(a.published_at).getTime() + 2*24*60*60*1000 - Date.now();
+        if (ms <= 0) return 'Expiring soon';
+        const h = Math.floor(ms/3600000);
+        return h < 24 ? `Expires in ${h}h` : `Expires in ${Math.floor(h/24)}d`;
+      })() : '';
+      return `
+        <div class="pub-card" onclick="openPubDetail(${i})" data-idx="${i}">
+          <div class="pub-card-top">
+            <span class="pub-card-cat">${esc(a.category||'News')}</span>
+            <span class="pub-card-expiry">${esc(expiry)}</span>
+          </div>
+          <h3 class="pub-card-heading">${esc(a.heading||'Untitled')}</h3>
+          ${a.sub_heading ? `<p class="pub-card-sub">${esc(a.sub_heading)}</p>` : ''}
+          <div class="pub-card-meta">
+            ${a.reporter ? `<span>✍ ${esc(a.reporter)}</span>` : ''}
+            ${a.hocalwire_id ? `<span class="pub-card-id">ID: ${esc(a.hocalwire_id)}</span>` : ''}
+            <span class="pub-card-time">${ago}</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    // Store for detail view
+    window._PUB_FEED_DATA = articles;
+
+  } catch(e) {
+    feedEl.innerHTML = `<div class="pub-feed-loading" style="color:var(--err)">Failed to load feed</div>`;
+  }
+}
+
+function openPubDetail(i) {
+  const a = (window._PUB_FEED_DATA || [])[i];
+  if (!a) return;
+  const content = $('pub-detail-content');
+  const ago = a.published_at ? relTime(a.published_at) : '—';
+  content.innerHTML = `
+    <div class="pub-detail-cat">${esc(a.category||'News')}</div>
+    <h2 class="pub-detail-heading">${esc(a.heading||'Untitled')}</h2>
+    ${a.sub_heading ? `<p class="pub-detail-sub">${esc(a.sub_heading)}</p>` : ''}
+    <div class="pub-detail-row">
+      ${a.reporter  ? `<span>✍ ${esc(a.reporter)}</span>` : ''}
+      <span>🕐 Published ${ago}</span>
+      ${a.hocalwire_id ? `<span>🔗 Hocalwire ID: <strong>${esc(a.hocalwire_id)}</strong></span>` : ''}
+    </div>
+    ${a.image_url ? `<img class="pub-detail-img" src="${esc(a.image_url)}" alt="" onerror="this.style.display='none'">` : ''}
+    ${a.body_html  ? `<div class="pub-detail-body">${a.body_html}</div>` : ''}
+  `;
+  $('pub-detail-overlay').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closePubDetail(e) {
+  if (e && e.target !== $('pub-detail-overlay')) return;
+  $('pub-detail-overlay').classList.add('hidden');
+  document.body.style.overflow = '';
 }
 
 // Activity nav button
@@ -2154,3 +2233,4 @@ async function sendChatMessage(e) {
 
 // ── Init ──────────────────────────────────────────────────────
 loadArticles();
+refreshActivityCount();
