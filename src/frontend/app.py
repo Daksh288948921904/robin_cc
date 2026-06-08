@@ -1218,15 +1218,11 @@ def get_activity():
 def published_feed():
     """Return published articles from Supabase for the activity feed."""
     try:
-        from src.utils.supabase_sync import _get_client
-        client = _get_client()
-        if not client:
+        from src.utils.supabase_sync import get_published_feed
+        rows = get_published_feed()
+        if rows is None:
             return jsonify({'status': 'error', 'message': 'Supabase not configured'}), 500
-        res = (client.table('published_articles')
-               .select('*')
-               .order('published_at', desc=True)
-               .execute())
-        return jsonify({'status': 'success', 'articles': res.data or []})
+        return jsonify({'status': 'success', 'articles': rows})
     except Exception as e:
         app.logger.error('published_feed error: %s', e)
         return jsonify({'status': 'error', 'message': str(e)}), 500
