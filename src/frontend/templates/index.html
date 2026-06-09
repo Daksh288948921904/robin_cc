@@ -406,14 +406,15 @@
     <div id="hocal-preview-content">
       <div class="hocal-preview-meta" id="hocal-preview-meta"></div>
       <div class="hocal-preview-body" id="hocal-preview-body"></div>
-      <div class="vmodal-footer">
-        <button class="vmodal-cancel-btn" onclick="closeHocalwirePreview()">Cancel</button>
-        <button class="vmodal-send-btn" id="hocal-confirm-btn" onclick="confirmPublishToHocalwire()">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3.5 6l3 3 3-3M1 11h11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span id="hocal-confirm-label">Confirm & Publish</span>
-          <span class="vmodal-spinner hidden" id="hocal-confirm-spinner"></span>
-        </button>
-      </div>
+    </div>
+    <!-- Footer always pinned at bottom, outside scrollable content -->
+    <div class="vmodal-footer" id="hocal-preview-footer">
+      <button class="vmodal-cancel-btn" onclick="closeHocalwirePreview()">Cancel</button>
+      <button class="vmodal-send-btn" id="hocal-confirm-btn" onclick="confirmPublishToHocalwire()">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3.5 6l3 3 3-3M1 11h11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span id="hocal-confirm-label">Confirm & Publish</span>
+        <span class="vmodal-spinner hidden" id="hocal-confirm-spinner"></span>
+      </button>
     </div>
   </div>
 </div>

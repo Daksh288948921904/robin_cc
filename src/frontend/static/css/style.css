@@ -1600,7 +1600,7 @@ a{color:inherit;text-decoration:none}
     max-height:90vh;
     margin:0;
   }
-  /* Make entire content area a single scrollable column */
+  /* Content scrolls, footer stays pinned */
   #hocal-preview-content{
     overflow-y:auto;
     overflow-x:hidden;
@@ -1608,15 +1608,8 @@ a{color:inherit;text-decoration:none}
     min-height:0;
     display:block;
   }
-  .hocal-preview-meta{
-    padding:14px 14px 0;
-    overflow:visible;
-  }
-  .hocal-preview-body{
-    overflow-y:visible;
-    flex:none;
-    padding:12px 14px 16px;
-  }
+  .hocal-preview-meta{padding:14px 14px 0}
+  .hocal-preview-body{padding:12px 14px 16px}
   .hocal-prev-img{max-height:150px}
   .hocal-prev-heading{font-size:15px}
   .hocal-prev-subheading{font-size:12px}
@@ -2173,7 +2166,7 @@ a{color:inherit;text-decoration:none}
    HOCALWIRE PREVIEW MODAL
 ═══════════════════════════════════════════════ */
 .hocal-preview-modal{max-width:680px;width:95vw;max-height:88vh;display:flex;flex-direction:column}
-#hocal-preview-content{display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0}
+#hocal-preview-content{display:block;flex:1;overflow-y:auto;overflow-x:hidden;min-height:0}
 .hocal-preview-meta{padding:16px 20px 0;border-bottom:1px solid var(--border);flex-shrink:0}
 
 .hocal-prev-heading{font-size:17px;font-weight:700;color:var(--ink);line-height:1.35;margin-bottom:6px}
