@@ -1595,6 +1595,24 @@ a{color:inherit;text-decoration:none}
   .vmodal-box{width:96vw;padding:20px 16px}
 }
 
+/* Mobile fetch button (hidden on desktop, shown on mobile) */
+.mob-fetch-btn{
+  display:none;
+  align-items:center;gap:5px;
+  background:linear-gradient(135deg,#4f46e5,#6366f1);
+  border:none;border-radius:8px;
+  color:#fff;font-size:12px;font-weight:600;font-family:inherit;
+  padding:7px 11px;cursor:pointer;white-space:nowrap;flex-shrink:0;
+  transition:opacity .15s;
+}
+.mob-fetch-btn:active{opacity:.8}
+
+@media(max-width:600px){
+  .mob-fetch-btn{display:flex}
+  /* shrink search box to make room */
+  .search-box{max-width:140px}
+}
+
 /* ── Extra-small phones ── */
 @media(max-width:380px){
   .reader-title{font-size:18px}
