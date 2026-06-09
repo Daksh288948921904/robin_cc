@@ -1593,6 +1593,33 @@ a{color:inherit;text-decoration:none}
   /* ── Overlays / modals ── */
   .pub-detail-modal{width:96vw;max-height:88vh;padding:20px 16px}
   .vmodal-box{width:96vw;padding:20px 16px}
+
+  /* ── Hocalwire preview modal ── */
+  .hocal-preview-modal{
+    width:96vw;
+    max-height:90vh;
+    margin:0;
+  }
+  /* Make entire content area a single scrollable column */
+  #hocal-preview-content{
+    overflow-y:auto;
+    overflow-x:hidden;
+    flex:1;
+    min-height:0;
+    display:block;
+  }
+  .hocal-preview-meta{
+    padding:14px 14px 0;
+    overflow:visible;
+  }
+  .hocal-preview-body{
+    overflow-y:visible;
+    flex:none;
+    padding:12px 14px 16px;
+  }
+  .hocal-prev-img{max-height:150px}
+  .hocal-prev-heading{font-size:15px}
+  .hocal-prev-subheading{font-size:12px}
 }
 
 /* Mobile fetch button (hidden on desktop, shown on mobile) */
