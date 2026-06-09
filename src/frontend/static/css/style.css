@@ -2509,7 +2509,7 @@ body::before {
 .reader-regen-spinner{display:inline-block;width:10px;height:10px;border:1.5px solid var(--ink2);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
 .img-picker {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
   margin-bottom: 6px;
 }
