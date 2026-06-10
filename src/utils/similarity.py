@@ -29,6 +29,13 @@ def _resolve_backend():
     global _model, _USE_TFIDF
     if _USE_TFIDF is not None:
         return
+    import os
+    # On Render (or when explicitly disabled) skip PyTorch to avoid OOM on 512MB instances
+    if os.getenv("RENDER") or os.getenv("DISABLE_SENTENCE_TRANSFORMERS"):
+        logger.info("Render/constrained env detected — using TF-IDF similarity.")
+        _model = None
+        _USE_TFIDF = True
+        return
     try:
         from sentence_transformers import SentenceTransformer
         logger.info("Loading sentence-transformer model: %s", _MODEL_NAME)
