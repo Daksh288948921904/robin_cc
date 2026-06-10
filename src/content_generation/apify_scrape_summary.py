@@ -7,16 +7,15 @@ import os
 import logging
 from datetime import datetime
 
-from groq import Groq
-
 logger = logging.getLogger(__name__)
 
 
-def _groq_client() -> Groq:
-    key = os.getenv("GROQ_API_KEY")
-    if not key:
-        raise RuntimeError("GROQ_API_KEY not set")
-    return Groq(api_key=key)
+def _groq_client():
+    from src.content_generation.groq_pool import get_groq_client
+    client = get_groq_client()
+    if client is None:
+        raise RuntimeError("No GROQ_API_KEY* found in environment")
+    return client
 
 
 def generate_social_summary(platform: str, posts: list, headline: str) -> dict:

@@ -17,13 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def _get_groq_client():
-    from groq import Groq
-    from dotenv import load_dotenv
-    load_dotenv()
-    key = os.getenv("GROQ_API_KEY")
-    if not key:
-        raise RuntimeError("No GROQ_API_KEY found in environment")
-    return Groq(api_key=key)
+    from src.content_generation.groq_pool import get_groq_client
+    client = get_groq_client()
+    if client is None:
+        raise RuntimeError("No GROQ_API_KEY* found in environment")
+    return client
 
 
 def _build_prompt(main_article: Dict, coverage: List[Dict]) -> str:
@@ -89,28 +87,34 @@ def generate_timeline(
     Returns:
         List of {time, event} dicts or raises on failure.
     """
-    client = _get_groq_client()
+    from src.content_generation.groq_pool import rotate_groq_key
     prompt = _build_prompt(main_article, coverage)
+    msgs = [
+        {
+            "role": "system",
+            "content": (
+                "You are a precise timeline extraction engine. "
+                "Output ONLY a raw JSON array — no markdown code fences, "
+                "no commentary, no extra text. Just the JSON array."
+            ),
+        },
+        {"role": "user", "content": prompt},
+    ]
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a precise timeline extraction engine. "
-                    "Output ONLY a raw JSON array — no markdown code fences, "
-                    "no commentary, no extra text. Just the JSON array."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.15,
-        max_tokens=450,
-    )
-
-    raw = response.choices[0].message.content.strip()
-    return _parse(raw)
+    for attempt in range(8):
+        client = _get_groq_client()
+        try:
+            response = client.chat.completions.create(
+                model=model, messages=msgs, temperature=0.15, max_tokens=450,
+            )
+            raw = response.choices[0].message.content.strip()
+            return _parse(raw)
+        except Exception as e:
+            if "429" in str(e) or "rate_limit" in str(e).lower():
+                if not rotate_groq_key(f"timeline attempt {attempt+1}"):
+                    raise
+            else:
+                raise
 
 
 def _parse(raw: str) -> List[Dict]:
