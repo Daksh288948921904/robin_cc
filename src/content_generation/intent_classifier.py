@@ -1,36 +1,18 @@
 """
 OSI News Automation – Intent Classifier
 ========================================
-Zero-shot story-type and aspect classification using two open-source components:
-
-  • Intent / story-type classification:
-      Model: cross-encoder/nli-deberta-v3-small  (HuggingFace, ~90 MB)
-      Method: transformers zero-shot-classification pipeline
-      No training, no GPU required.
-
-  • Chunk aspect classification:
-      Same NLI pipeline, applied per paragraph.
-
-Story types (9):
-    breaking_news, political, business, science_health,
-    conflict_crime, human_interest, sports, analysis, general
-
-Aspect taxonomy (17):
-    event_core, background_context, casualties_damage, government_response,
-    international_reaction, expert_analysis, civilian_testimony,
-    economic_impact, humanitarian_situation, legal_judicial,
-    future_developments, military_operations, political_dynamics,
-    sports_result, sports_narrative, science_findings, health_impact
+Keyword-based story-type and aspect classification.
+No model load — runs in microseconds.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from loguru import logger
 
 # ─────────────────────────────────────────────────────────────────
-# LABEL DEFINITIONS  (what the NLI model scores against)
+# LABEL DEFINITIONS  (retained for reference / external consumers)
 # ─────────────────────────────────────────────────────────────────
 
 STORY_TYPE_LABELS: Dict[str, str] = {
@@ -67,51 +49,37 @@ ASPECT_LABELS: Dict[str, str] = {
 
 
 # ─────────────────────────────────────────────────────────────────
-# NLI PIPELINE — lazy-loaded singleton
+# STORY-TYPE KEYWORDS  (keyword-based, no model needed)
 # ─────────────────────────────────────────────────────────────────
 
-_nli_pipeline = None
+_STORY_TYPE_KW: Dict[str, List[str]] = {
+    "conflict_crime":  ["war", "attack", "killed", "military", "troops", "bomb", "missile",
+                        "conflict", "battle", "gunfire", "shooting", "murder", "crime", "police",
+                        "arrested", "terror", "explosion", "casualt", "airstrike", "offensive"],
+    "political":       ["election", "parliament", "president", "prime minister", "government",
+                        "senator", "congress", "vote", "party", "democrat", "republican",
+                        "legislation", "policy", "minister", "cabinet", "campaign", "ballot"],
+    "business":        ["market", "economy", "trade", "gdp", "inflation", "stock", "company",
+                        "revenue", "profit", "investment", "financial", "billion", "startup",
+                        "merger", "acquisition", "ceo", "earnings", "recession", "growth"],
+    "sports":          ["match", "game", "tournament", "champion", "score", "goal", "league",
+                        "player", "coach", "team", "season", "stadium", "final", "win", "lost",
+                        "nba", "nfl", "fifa", "wnba", "olympic", "athlete", "playoff"],
+    "science_health":  ["research", "study", "scientist", "vaccine", "disease", "health",
+                        "medical", "hospital", "treatment", "cancer", "drug", "clinical",
+                        "discovery", "published", "journal", "genome", "ai model", "space"],
+    "human_interest":  ["community", "family", "inspire", "volunteer", "charity", "rescue",
+                        "story of", "overcome", "courage", "local hero", "celebrate", "reunion"],
+    "analysis":        ["analysis", "investigat", "deep dive", "explains", "why ", "how ",
+                        "context", "examining", "perspective", "opinion", "editorial", "insight"],
+    "breaking_news":   ["breaking", "just in", "urgent", "developing", "alert", "latest",
+                        "update:", "overnight", "hours ago", "minutes ago", "this morning"],
+}
 
 
-def _get_pipeline():
-    global _nli_pipeline
-    if _nli_pipeline is not None:
-        return _nli_pipeline
-    try:
-        from transformers import pipeline
-        logger.info("Loading NLI classifier (cross-encoder/nli-deberta-v3-small)…")
-        _nli_pipeline = pipeline(
-            "zero-shot-classification",
-            model="cross-encoder/nli-deberta-v3-small",
-            device=-1,          # CPU
-        )
-        logger.info("NLI classifier ready.")
-    except Exception as e:
-        logger.error(f"Failed to load NLI pipeline: {e}")
-        _nli_pipeline = None
-    return _nli_pipeline
-
-
-# ─────────────────────────────────────────────────────────────────
-# INTERNAL HELPERS
-# ─────────────────────────────────────────────────────────────────
-
-def _nli_classify(text: str, candidate_labels: List[str]) -> Dict[str, float]:
-    """
-    Run zero-shot classification on *text* against *candidate_labels*.
-    Returns {label: score} dict.  Falls back to uniform scores on failure.
-    """
-    pipe = _get_pipeline()
-    if pipe is None:
-        return {lbl: 1.0 / len(candidate_labels) for lbl in candidate_labels}
-    try:
-        # Truncate to 512 tokens (model limit); DeBERTa tokenises ~3 chars/token
-        truncated = text[:1400]
-        result = pipe(truncated, candidate_labels, multi_label=False)
-        return dict(zip(result["labels"], result["scores"]))
-    except Exception as e:
-        logger.warning(f"NLI classification failed: {e}")
-        return {lbl: 1.0 / len(candidate_labels) for lbl in candidate_labels}
+def _keyword_score(text: str, keywords: List[str]) -> int:
+    t = text.lower()
+    return sum(1 for kw in keywords if kw in t)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -120,10 +88,8 @@ def _nli_classify(text: str, candidate_labels: List[str]) -> Dict[str, float]:
 
 def classify_story_type(articles: List[Dict]) -> Dict:
     """
-    Classify a cluster of articles into a single story type.
-
-    Builds a short cluster representation (headline + 200-char snippet
-    from each article, up to 5) and scores it against all story-type labels.
+    Classify a cluster of articles into a single story type using keyword matching.
+    Runs in microseconds — no model load required.
 
     Returns:
         {"story_type": str, "confidence": float}
@@ -131,49 +97,41 @@ def classify_story_type(articles: List[Dict]) -> Dict:
     parts = []
     for art in articles[:5]:
         heading = art.get("heading", "")
-        snippet = art.get("story", "")[:200]
+        snippet = art.get("story", "")[:300]
         parts.append(f"{heading}. {snippet}")
     cluster_text = " | ".join(parts)
 
-    candidate_labels = list(STORY_TYPE_LABELS.values())
-    label_keys = list(STORY_TYPE_LABELS.keys())
+    scores: Dict[str, int] = {
+        stype: _keyword_score(cluster_text, kws)
+        for stype, kws in _STORY_TYPE_KW.items()
+    }
 
-    scores = _nli_classify(cluster_text, candidate_labels)
+    best = max(scores, key=scores.__getitem__)
+    total = sum(scores.values()) or 1
+    confidence = scores[best] / total
 
-    # Map description strings back to short label keys
-    best_description = max(scores, key=scores.__getitem__)
-    best_key = label_keys[candidate_labels.index(best_description)]
-    best_score = scores[best_description]
+    if scores[best] == 0:
+        best = "general"
+        confidence = 0.5
 
-    logger.info(f"Story type: {best_key} (confidence={best_score:.3f})")
-    return {"story_type": best_key, "confidence": float(best_score)}
+    logger.info(f"Story type: {best} (confidence={confidence:.3f})")
+    return {"story_type": best, "confidence": float(confidence)}
 
 
-def classify_aspects_present(articles: List[Dict], threshold: float = 0.10) -> List[str]:
+def classify_aspects_present(articles: List[Dict], threshold: int = 1) -> List[str]:
     """
-    Return aspect labels that appear in the cluster at or above *threshold*.
-
-    Scores the full text of each article against all 17 aspects and takes
-    the union of aspects that exceed the threshold in any single article.
-
+    Return aspect labels present in the cluster using keyword matching.
     Always includes "event_core".
     """
-    candidate_labels = list(ASPECT_LABELS.values())
-    label_keys = list(ASPECT_LABELS.keys())
-
-    found: Dict[str, float] = {}
-
+    parts = []
     for art in articles:
-        text = (art.get("heading", "") + ". " + art.get("story", ""))[:1000]
-        scores = _nli_classify(text, candidate_labels)
-        for desc, score in scores.items():
-            key = label_keys[candidate_labels.index(desc)]
-            if score > found.get(key, 0.0):
-                found[key] = score
+        parts.append(art.get("heading", "") + ". " + art.get("story", "")[:500])
+    cluster_text = " ".join(parts)
 
-    present = [lbl for lbl, score in found.items() if score >= threshold]
-    if "event_core" not in present:
-        present.insert(0, "event_core")
+    present = ["event_core"]
+    for aspect, keywords in _CHUNK_KW.items():
+        if _keyword_score(cluster_text, keywords) >= threshold:
+            present.append(aspect)
 
     logger.info(f"Aspects present ({len(present)}): {present}")
     return present
