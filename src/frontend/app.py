@@ -23,20 +23,13 @@ from fastapi import BackgroundTasks, FastAPI, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from werkzeug.security import check_password_hash
 
 load_dotenv(PROJECT_ROOT / '.env')
 
 app = FastAPI()
-
-_secret = os.environ.get('SECRET_KEY') or os.urandom(32).hex()
-app.add_middleware(SessionMiddleware, secret_key=_secret, https_only=False)
-
-_static_dir = Path(__file__).parent / 'static'
-_static_dir.mkdir(parents=True, exist_ok=True)
-app.mount('/static', StaticFiles(directory=str(_static_dir)), name='static')
-templates = Jinja2Templates(directory=str(Path(__file__).parent / 'templates'))
 
 _USERS = {
     'Rohit@Robin.cc': (
@@ -58,10 +51,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_static_dir = Path(__file__).parent / 'static'
+_static_dir.mkdir(parents=True, exist_ok=True)
+app.mount('/static', StaticFiles(directory=str(_static_dir)), name='static')
+templates = Jinja2Templates(directory=str(Path(__file__).parent / 'templates'))
 
-# ── Auth middleware (replaces @login_required on every route) ────
-@app.middleware('http')
-async def auth_middleware(request: Request, call_next):
+
+# ── Middleware — order matters: last add_middleware call = outermost = runs first ──
+# Execution order on incoming request: SessionMiddleware → auth → log → route
+
+async def _auth_middleware(request: Request, call_next):
     path = request.url.path
     if path.startswith('/login') or path == '/logout' or path.startswith('/static/'):
         return await call_next(request)
@@ -70,11 +69,17 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-@app.middleware('http')
-async def log_requests(request: Request, call_next):
+async def _log_requests(request: Request, call_next):
     response = await call_next(request)
     logger.info('%s %s → %s', request.method, request.url.path, response.status_code)
     return response
+
+
+# Added in reverse execution order (each add_middleware wraps the existing stack)
+app.add_middleware(BaseHTTPMiddleware, dispatch=_log_requests)    # runs 3rd
+app.add_middleware(BaseHTTPMiddleware, dispatch=_auth_middleware)  # runs 2nd
+_secret = os.environ.get('SECRET_KEY') or os.urandom(32).hex()
+app.add_middleware(SessionMiddleware, secret_key=_secret, https_only=False)  # runs 1st
 
 
 @app.exception_handler(404)
