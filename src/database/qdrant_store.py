@@ -125,12 +125,12 @@ def _get_client():
 # ─────────────────────────────────────────────────────────────────
 
 def ensure_collection() -> bool:
-    """Create the story_chunks collection if it does not exist."""
+    """Create the story_chunks collection and payload indexes if they don't exist."""
     client = _get_client()
     if client is None:
         return False
     try:
-        from qdrant_client.models import Distance, VectorParams
+        from qdrant_client.models import Distance, VectorParams, PayloadSchemaType
         existing = [c.name for c in client.get_collections().collections]
         if COLLECTION_NAME not in existing:
             client.create_collection(
@@ -138,6 +138,19 @@ def ensure_collection() -> bool:
                 vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
             )
             logger.info(f"Created Qdrant collection '{COLLECTION_NAME}' ({VECTOR_SIZE}-dim cosine)")
+
+        # Qdrant requires payload indexes for filtered scroll/search queries.
+        # Create them if missing — safe to call on an existing indexed field.
+        for field in ("cluster_id", "aspect", "session_id"):
+            try:
+                client.create_payload_index(
+                    collection_name=COLLECTION_NAME,
+                    field_name=field,
+                    field_schema=PayloadSchemaType.KEYWORD,
+                )
+            except Exception:
+                pass  # index already exists — ignore
+
         return True
     except Exception as e:
         logger.error(f"ensure_collection failed: {e}")
@@ -309,14 +322,14 @@ def semantic_search(
             FieldCondition(key="aspect", match=MatchAny(any=aspects)),
         ]
 
-        results = client.search(
+        response = client.query_points(
             collection_name=COLLECTION_NAME,
-            query_vector=query_vec,
+            query=query_vec,
             query_filter=Filter(must=conditions),
             limit=top_k,
             with_payload=True,
         )
-        return [r.payload for r in results]
+        return [r.payload for r in response.points]
 
     except Exception as e:
         logger.error(f"semantic_search failed: {e}")
