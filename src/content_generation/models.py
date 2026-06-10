@@ -1,7 +1,7 @@
 """
 OSI News Automation – Shared Models
 ====================================
-Pydantic models shared between article_generator.py and prompt_builder.py.
+Pydantic models shared across the content generation pipeline.
 Defined in a separate module to avoid circular imports.
 """
 
@@ -9,6 +9,39 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
+
+# ─────────────────────────────────────────────────────────────────
+# ASPECT-RAG PIPELINE MODELS
+# ─────────────────────────────────────────────────────────────────
+
+class SectionPlan(BaseModel):
+    """One planned section within a FlowPlan."""
+    heading:     str           # 3-5 word specific heading
+    aspects:     List[str]     # aspect labels to retrieve chunks for
+    tone:        str           # e.g. "urgent", "human", "analytical"
+    word_target: int           # approximate target word count
+
+
+class FlowPlan(BaseModel):
+    """Full article structure plan produced by the flow planner."""
+    story_type:       str
+    lede_aspects:     List[str]       # aspects used for the opening lede
+    sections:         List[SectionPlan]
+    total_word_target: int
+
+
+class GeneratedSection(BaseModel):
+    """One generated section body returned by the section generator."""
+    heading:        str
+    body:           str
+    aspects_used:   List[str]
+    quotes_embedded: List[str]        # verbatim quotes found in body
+    word_count:     int
+
+
+# ─────────────────────────────────────────────────────────────────
+# AUDIT MODEL (unchanged)
+# ─────────────────────────────────────────────────────────────────
 
 class AuditResult(BaseModel):
     available_sections: List[str]

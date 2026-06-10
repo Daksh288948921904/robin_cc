@@ -34,6 +34,13 @@ from src.content_generation.prompt_builder import (
     SYSTEM_MESSAGE_V3,
 )
 
+# Aspect-RAG pipeline components
+from src.content_generation.intent_classifier import classify_story_type
+from src.content_generation.aspect_chunker import chunk_and_store_cluster
+from src.content_generation.flow_planner import plan_article_flow
+from src.content_generation.section_generator import generate_sections
+from src.content_generation.article_assembler import assemble_article
+
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
@@ -396,103 +403,116 @@ def _build_repair_instructions(failures: list, word_ceiling: int) -> str:
 
 
 # ===========================================
-# MAIN GENERATION FUNCTION
+# MAIN GENERATION FUNCTION  (Aspect-RAG Pipeline)
 # ===========================================
 
 def generate_article(
-    trend: Dict, 
+    trend: Dict,
     target_words: int = 800,
     max_retries: int = 3,
-    include_subheadings: bool = True
+    include_subheadings: bool = True,
 ) -> Optional[Dict]:
     """
-    Generate a comprehensive article from a trend cluster using Groq API.
-    
-    Uses a two-stage approach:
-      Stage 1 — Audit source material to determine what can honestly be written
-      Stage 2 — Write only what the audit approved, with dynamic section selection
+    Generate a comprehensive article from a trend cluster.
 
-    Args:
-        trend: Trend dictionary with 'topic', 'articles', and 'keywords'.
-        target_words: Target word count for generated article.
-        max_retries: Maximum retry attempts on failure.
-        include_subheadings: Whether to include subheadings.
-        
-    Returns:
-        Generated article dictionary or None on failure.
+    Six-stage Aspect-RAG pipeline:
+      1. Intent classification  — open-source NLI model, no API call
+      2. Aspect chunking        — paragraph split + Qdrant storage
+      3. Source audit           — Groq JSON call (1 call)
+      4. Flow planning          — Groq JSON call (1 call, ~150 tokens)
+      5. Section-by-section gen — Groq call per section (5-7 calls)
+      6. Assembly + metadata    — Groq JSON call (1 call)
+
+    target_words, max_retries, include_subheadings kept for API compatibility.
     """
-    # Step 1 — Extract source_articles and topic
     if not trend or 'articles' not in trend:
         logger.error("Invalid trend data provided")
         return None
-    
+
     source_articles = trend.get('articles', [])
-    topic = trend.get('topic', 'News Update')
-    
+    topic           = trend.get('topic', 'News Update')
+    session_id      = trend.get('session_id', '')
+
     if not source_articles:
         logger.error("No source articles in trend")
         return None
-    
-    # Step 2 — Get Groq client
+
     client = get_groq_client()
-    
     if not client:
         logger.warning("Groq client unavailable, using fallback")
         return generate_fallback_article(trend)
-    
-    # Step 3 — Audit source material
-    audit = audit_source_material(source_articles, topic, client)
-    
-    # Step 4 — Hard stop: thin quality
-    if audit.source_quality == "thin":
-        logger.warning(
-            f"⏭️ Skipping '{topic}' — audit found insufficient material "
-            f"(quality=thin, sections={audit.available_sections})"
-        )
-        return None
-    
-    # Step 5 — Extract signals
-    signals = extract_article_signals(source_articles)
-    
-    # Step 6 — Build dynamic prompt
-    system_msg, user_prompt = build_dynamic_prompt(
-        source_articles, topic, audit, signals
+
+    cluster_id = re.sub(r'[^a-z0-9_-]', '-', topic.lower())[:80]
+    logger.info(f"🖊️  Generating article: '{topic}' ({len(source_articles)} sources)")
+
+    # Stage 1 — Intent classification (no API call)
+    intent     = classify_story_type(source_articles)
+    story_type = intent["story_type"]
+    logger.info(f"   Story type: {story_type} (conf={intent['confidence']:.2f})")
+
+    # Stage 2 — Aspect chunking → Qdrant
+    aspect_inventory = chunk_and_store_cluster(
+        source_articles, cluster_id, story_type, session_id
     )
+    if not aspect_inventory:
+        logger.warning("Chunking produced no usable aspects — using fallback")
+        return generate_fallback_article(trend)
+    logger.info(f"   Aspect inventory: {dict(sorted(aspect_inventory.items(), key=lambda x: -x[1]))}")
 
-    # Capture prompt for dashboard Prompts page
-    prompt_debug = {
-        "system_message": system_msg,
-        "user_prompt":    user_prompt,
-        "model":          os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'),
-        "captured_at":    datetime.utcnow().isoformat(),
-        "topic":          topic,
-        "source_count":   len(source_articles),
-        "audit_quality":  audit.source_quality,
-        "audit_sections": audit.available_sections,
+    # Stage 3 — Source audit
+    audit = audit_source_material(source_articles, topic, client)
+
+    if audit.source_quality == "thin":
+        logger.warning(f"⏭️  Skipping '{topic}' — audit quality=thin")
+        return None
+
+    # Stage 4 — Flow planning
+    flow = plan_article_flow(
+        story_type=story_type,
+        aspect_inventory=aspect_inventory,
+        source_quality=audit.source_quality,
+        source_count=len(source_articles),
+        groq_client=client,
+    )
+    logger.info(f"   Flow: {len(flow.sections)} sections, ~{flow.total_word_target}w")
+
+    # Stage 5 — Section-by-section generation
+    lede, sections = generate_sections(flow, cluster_id, topic, client)
+
+    if not sections:
+        logger.warning("No sections generated — using fallback")
+        return generate_fallback_article(trend)
+
+    # Stage 6 — Assembly + metadata
+    article = assemble_article(
+        lede=lede,
+        sections=sections,
+        flow=flow,
+        trend=trend,
+        audit_result=audit,
+        groq_client=client,
+    )
+    if article is None:
+        return generate_fallback_article(trend)
+
+    article["prompt_debug"] = {
+        "pipeline":         "aspect_rag_v1",
+        "story_type":       story_type,
+        "cluster_id":       cluster_id,
+        "aspect_inventory": aspect_inventory,
+        "flow_sections":    [s.heading for s in flow.sections],
+        "captured_at":      datetime.utcnow().isoformat(),
+        "audit_quality":    audit.source_quality,
+        "audit_sections":   audit.available_sections,
     }
+    logger.info(
+        f"✅ Generated: '{article['heading'][:60]}' | "
+        f"{article['word_count']}w | {story_type}"
+    )
+    return article
 
-    # Step 7 — Calculate max_tokens
-    # 1.35 tokens/word is empirical for Llama 3.3 on news prose.
-    # HEADLINE_OVERHEAD covers headline + subheadline + dateline tokens.
-    # This makes max_tokens a hard enforcement of the audit ceiling,
-    # not just a generous budget.
-    TOKENS_PER_WORD = 1.35
-    HEADLINE_OVERHEAD = 80
-    max_tokens = int(audit.honest_word_ceiling * TOKENS_PER_WORD) + HEADLINE_OVERHEAD
-    logger.debug(f"max_tokens set to {max_tokens} for ceiling {audit.honest_word_ceiling}w ({audit.source_quality})")
-    
-    logger.info(f"🖊️ Generating article for trend: '{topic}'")
-    logger.info(f"   Sources: {len(source_articles)} articles")
-    logger.info(f"   Audit: quality={audit.source_quality}, ceiling={audit.honest_word_ceiling}w")
-    
-    # Step 8 — Generation retry loop
-    # keys_tried_this_article tracks which key indices have been exhausted so
-    # we avoid cycling back to an already-burned key within the same article.
-    attempt = 0
-    keys_tried_this_article: set = set()
-    last_validation_failures: list = []
-    # Tracks failure reasons from the previous attempt so the
-    # retry can send a targeted repair instruction.
+
+def _old_loop_removed_stub():  # noqa: dead code — delete after one sprint
     while attempt < max_retries:
         try:
             # a) Compute per-attempt token budget and repair preamble.
@@ -757,8 +777,7 @@ def generate_article(
                 logger.error("Max retries reached, using fallback")
                 return generate_fallback_article(trend)
 
-    # Step 9 — After loop exhausted without success
-    return generate_fallback_article(trend)
+    pass  # old loop body removed
 
 
 def generate_fallback_article(trend: Dict) -> Optional[Dict]:

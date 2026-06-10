@@ -588,7 +588,7 @@ body {
         {% endif %}
 
         <form method="POST"
-              action="{{ url_for('login', next=request.args.get('next', '')) }}"
+              action="/login?next={{ request.query_params.get('next', '') }}"
               id="login-form" novalidate>
 
           <div class="lc-field">

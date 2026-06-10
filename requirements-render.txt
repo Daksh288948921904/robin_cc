@@ -53,6 +53,14 @@ validators==0.22.0
 geopy==2.4.1
 loguru==0.7.2
 
-# Web server
+# Web server (FastAPI + ASGI)
 gunicorn==21.2.0
-flask==3.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+werkzeug>=3.0.0
+itsdangerous>=2.1.0
+
+# Vector store (Aspect-RAG pipeline)
+qdrant-client>=1.9.0
+httpx>=0.27.0
