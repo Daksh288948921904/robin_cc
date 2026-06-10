@@ -127,30 +127,29 @@ def _call_groq(
     temperature: float = 0.35,
 ) -> Optional[str]:
     model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-    for attempt in range(3):
+    from src.content_generation.groq_pool import get_groq_client, rotate_groq_key
+    msgs = [
+        {"role": "system", "content": system},
+        {"role": "user",   "content": user},
+    ]
+    for attempt in range(8):
+        client = get_groq_client()
+        if client is None:
+            return None
         try:
-            resp = groq_client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user",   "content": user},
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens,
-                top_p=0.95,
+            resp = client.chat.completions.create(
+                model=model, messages=msgs,
+                temperature=temperature, max_tokens=max_tokens, top_p=0.95,
             )
-            text = resp.choices[0].message.content or ""
-            return text.strip()
+            return (resp.choices[0].message.content or "").strip()
         except Exception as e:
             err = str(e)
             if "429" in err or "rate_limit" in err.lower():
-                wait = 90 if attempt < 2 else 0
-                logger.warning(f"Rate limited (attempt {attempt+1}), waiting {wait}s…")
-                if wait:
-                    time.sleep(wait)
+                logger.warning(f"Rate limited (attempt {attempt+1}), rotating key…")
+                if not rotate_groq_key(f"section 429 attempt {attempt+1}"):
+                    return None  # no more keys
             else:
                 logger.warning(f"Groq call failed (attempt {attempt+1}): {e}")
-            if attempt == 2:
                 return None
     return None
 

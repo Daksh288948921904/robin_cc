@@ -47,8 +47,8 @@ def _embed_batch_jina(texts: List[str]) -> List[Optional[List[float]]]:
     """Embed all texts in one Jina API call (much faster than N individual calls)."""
     if not texts:
         return []
-    api_key = os.getenv("JINA_API_KEY", "")
-    model   = os.getenv("JINA_EMBED_MODEL", "jina-embeddings-v3")
+    api_key = os.getenv("JINA_API_KEY", "").strip()
+    model   = os.getenv("JINA_EMBED_MODEL", "jina-embeddings-v3").strip()
     try:
         resp = httpx.post(
             "https://api.jina.ai/v1/embeddings",
@@ -118,8 +118,8 @@ def _get_client():
         return _client
     try:
         from qdrant_client import QdrantClient
-        url     = os.getenv("QDRANT_URL", "http://localhost:6333")
-        api_key = os.getenv("QDRANT_API_KEY") or None
+        url     = os.getenv("QDRANT_URL", "http://localhost:6333").strip()
+        api_key = (os.getenv("QDRANT_API_KEY") or "").strip() or None
         _client = QdrantClient(url=url, api_key=api_key, timeout=30)
         logger.info(f"Qdrant client connected to {url}")
     except ImportError:
