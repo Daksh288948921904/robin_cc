@@ -99,7 +99,7 @@ async def server_error(request: Request, exc):
 # ── Auth routes ─────────────────────────────────────────────────
 @app.get('/login')
 async def login_get(request: Request):
-    return templates.TemplateResponse('login.html', {'request': request, 'error': None})
+    return templates.TemplateResponse(request, 'login.html', {'error': None})
 
 
 @app.post('/login')
@@ -109,9 +109,7 @@ async def login_post(request: Request, username: str = Form(''), password: str =
         request.session['authenticated'] = True
         next_url = request.query_params.get('next') or '/'
         return RedirectResponse(url=next_url, status_code=302)
-    return templates.TemplateResponse(
-        'login.html', {'request': request, 'error': 'Invalid username or password.'}
-    )
+    return templates.TemplateResponse(request, 'login.html', {'error': 'Invalid username or password.'})
 
 
 @app.get('/logout')
@@ -133,6 +131,8 @@ SOCIAL_POSTS: dict = {}
 AI_IMAGES:       dict = {}
 AI_IMAGE_PUBLIC: dict = {}
 ACTIVITY:        dict = {}
+
+_rag_state: dict = {}  # {str(idx): {'running': bool, 'done': bool, 'error': str|None}}
 
 AI_IMAGES_STATIC_DIR = Path(__file__).parent / 'static' / 'ai_images'
 
@@ -166,6 +166,7 @@ _scrape_state = {
     'started_at': None,
 }
 _scrape_lock = threading.Lock()
+_rag_lock    = threading.Lock()
 
 
 def ensure_output_dir():
@@ -219,12 +220,93 @@ def _run_scrape(max_articles: int):
             _scrape_state['done'] = True
 
 
+# ── RAG pipeline helpers ─────────────────────────────────────────
+
+def _rag_article_to_summary(article: dict, source_articles: list) -> dict:
+    """Convert generate_article() output to the SUMMARIES dict format."""
+    import re, random
+    story = article.get('story', '')
+
+    # Extract body: everything after the first ---
+    body = story
+    sep_idx = story.find('\n---\n')
+    if sep_idx != -1:
+        body = story[sep_idx + 5:].strip()
+
+    category = 'World'
+    cat_m = re.search(r'^CATEGORY:\s*(.+)$', story, re.MULTILINE)
+    if cat_m:
+        category = cat_m.group(1).strip()
+
+    location = article.get('dateline', 'INTERNATIONAL').split(',')[0].strip()
+    loc_m = re.search(r'^LOCATION:\s*(.+)$', story, re.MULTILINE)
+    if loc_m:
+        location = loc_m.group(1).strip()
+
+    seen: set = set()
+    sources_list = []
+    for src_art in source_articles:
+        name = src_art.get('source_name', 'Unknown')
+        if name in seen:
+            continue
+        seen.add(name)
+        sources_list.append({
+            'name':       name,
+            'headline':   src_art.get('heading', ''),
+            'url':        src_art.get('source_url', ''),
+            'region':     src_art.get('region', ''),
+            'similarity': 1.0,
+        })
+
+    reporter_first = random.choice([
+        'Aarav','Arjun','Rohan','Priya','Ananya','Kavya','Neha','Riya','Sanya',
+    ])
+    reporter_last = random.choice([
+        'Sharma','Verma','Singh','Gupta','Patel','Joshi','Mehta','Nair','Iyer',
+    ])
+
+    return {
+        'title':               article.get('heading', ''),
+        'subtitle':            article.get('sub_heading', ''),
+        'byline':              f"robin cc | {datetime.utcnow().strftime('%B %d, %Y')}",
+        'location':            location,
+        'category':            category,
+        'body':                body,
+        'raw_text':            story,
+        'sources_list':        sources_list,
+        'reporter':            f'{reporter_first} {reporter_last}',
+        'generated_at':        article.get('generated_at', ''),
+        'generation_pipeline': 'aspect_rag_v1',
+        'story_type':          article.get('story_type', ''),
+        'source_quality':      article.get('source_quality', ''),
+    }
+
+
+def _run_rag_generate(idx: int, trend: dict, source_articles: list):
+    key = str(idx)
+    try:
+        from src.content_generation.article_generator import generate_article
+        article = generate_article(trend)
+        if not article:
+            with _rag_lock:
+                _rag_state[key] = {'running': False, 'done': True, 'error': 'Pipeline returned no article — sources may be too thin'}
+            return
+        summary = _rag_article_to_summary(article, source_articles)
+        SUMMARIES[key] = summary
+        with _rag_lock:
+            _rag_state[key] = {'running': False, 'done': True, 'error': None}
+        logger.info('RAG generation done for article %s: %s', idx, article.get('heading', '')[:60])
+    except Exception as e:
+        logger.error('RAG generation failed for idx %s: %s\n%s', idx, e, traceback.format_exc())
+        with _rag_lock:
+            _rag_state[key] = {'running': False, 'done': True, 'error': str(e)}
+
+
 # ── Routes ───────────────────────────────────────────────────────
 @app.get('/')
 async def index(request: Request):
     import time
-    response = templates.TemplateResponse('index.html', {
-        'request': request,
+    response = templates.TemplateResponse(request, 'index.html', {
         'article_count': len(SCRAPED_ARTICLES),
         'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'static_v': str(int(time.time())),
@@ -447,6 +529,58 @@ async def generate_summary(request: Request, idx: int):
 
     SUMMARIES[key] = summary
     return JSONResponse({'status': 'success', 'summary': summary})
+
+
+@app.post('/api/articles/{idx}/rag-generate')
+async def rag_generate(request: Request, idx: int):
+    if not (0 <= idx < len(SCRAPED_ARTICLES)):
+        return JSONResponse({'status': 'error', 'message': 'Article not found'}, status_code=404)
+
+    key = str(idx)
+
+    with _rag_lock:
+        if _rag_state.get(key, {}).get('running'):
+            return JSONResponse({'status': 'running', 'message': 'Already generating'}, status_code=202)
+        _rag_state[key] = {'running': True, 'done': False, 'error': None}
+
+    main_article = SCRAPED_ARTICLES[idx]
+
+    # Use pre-computed coverage as the cluster; fall back to just the main article
+    coverage = COVERAGES.get(key, [])
+    cluster_articles = [main_article] + [
+        {k: v for k, v in art.items() if k != 'similarity'}
+        for art in coverage[:9]
+    ]
+
+    trend = {
+        'topic':      main_article.get('heading', main_article.get('topic', 'News Update')),
+        'articles':   cluster_articles,
+        'keywords':   main_article.get('keywords', []),
+        'session_id': '',
+    }
+
+    t = threading.Thread(target=_run_rag_generate, args=(idx, trend, cluster_articles), daemon=True)
+    t.start()
+
+    return JSONResponse({'status': 'started', 'message': 'RAG generation started'}, status_code=202)
+
+
+@app.get('/api/articles/{idx}/rag-status')
+async def rag_status(request: Request, idx: int):
+    key = str(idx)
+    with _rag_lock:
+        state = dict(_rag_state.get(key, {'running': False, 'done': False, 'error': None}))
+
+    if state.get('running'):
+        return JSONResponse({'status': 'running'})
+    if state.get('error'):
+        return JSONResponse({'status': 'error', 'message': state['error']})
+    if state.get('done'):
+        summary = SUMMARIES.get(key)
+        if summary:
+            return JSONResponse({'status': 'done', 'summary': summary})
+        return JSONResponse({'status': 'error', 'message': 'Generation completed but no summary stored'})
+    return JSONResponse({'status': 'idle'})
 
 
 @app.post('/api/articles/{idx}/news-check')
