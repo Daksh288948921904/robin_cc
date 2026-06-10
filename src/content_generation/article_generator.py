@@ -13,7 +13,6 @@ import os
 import sys
 import time
 import re
-import instructor
 from datetime import datetime
 from typing import Dict, List, Optional
 from collections import Counter
