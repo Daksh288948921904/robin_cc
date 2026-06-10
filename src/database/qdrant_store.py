@@ -38,7 +38,15 @@ VECTOR_SIZE     = 1024          # mxbai-embed-large output dims
 # ─────────────────────────────────────────────────────────────────
 
 def _embed_jina(text: str) -> Optional[List[float]]:
-    """Embed via Jina AI API (jina-embeddings-v3, 1024-dim)."""
+    """Embed a single text via Jina AI API."""
+    result = _embed_batch_jina([text])
+    return result[0] if result else None
+
+
+def _embed_batch_jina(texts: List[str]) -> List[Optional[List[float]]]:
+    """Embed all texts in one Jina API call (much faster than N individual calls)."""
+    if not texts:
+        return []
     api_key = os.getenv("JINA_API_KEY", "")
     model   = os.getenv("JINA_EMBED_MODEL", "jina-embeddings-v3")
     try:
@@ -48,17 +56,20 @@ def _embed_jina(text: str) -> Optional[List[float]]:
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json={"model": model, "input": [text]},
-            timeout=30.0,
+            json={"model": model, "input": texts},
+            timeout=60.0,
         )
         resp.raise_for_status()
         data = resp.json().get("data", [])
-        if data:
-            return data[0]["embedding"]
-        return None
+        result: List[Optional[List[float]]] = [None] * len(texts)
+        for item in data:
+            idx = item.get("index", 0)
+            if 0 <= idx < len(result):
+                result[idx] = item["embedding"]
+        return result
     except Exception as e:
-        logger.warning(f"Jina embed error: {e}")
-        return None
+        logger.warning(f"Jina batch embed error: {e}")
+        return [None] * len(texts)
 
 
 def _embed_ollama(text: str) -> Optional[List[float]]:
@@ -196,9 +207,16 @@ def save_chunks(chunks: List[Dict]) -> int:
         logger.error("qdrant-client not available")
         return 0
 
+    # Embed all chunks in a single API call instead of one-at-a-time
+    texts = [c["chunk_text"] for c in chunks]
+    if os.getenv("JINA_API_KEY"):
+        vectors = _embed_batch_jina(texts)
+    else:
+        vectors = [_embed_ollama(t) for t in texts]
+    logger.info(f"Embedded {len(texts)} chunks in one batch call")
+
     points = []
-    for chunk in chunks:
-        vec = _embed(chunk["chunk_text"])
+    for chunk, vec in zip(chunks, vectors):
         if vec is None:
             logger.warning(f"Skipping chunk (embed failed): {chunk['chunk_text'][:60]}")
             continue

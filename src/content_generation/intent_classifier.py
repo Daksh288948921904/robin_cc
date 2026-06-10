@@ -179,20 +179,44 @@ def classify_aspects_present(articles: List[Dict], threshold: float = 0.10) -> L
     return present
 
 
+# Keyword sets for instant chunk aspect classification (no model needed).
+# Keys match ASPECT_LABELS. Each word/phrase is matched on lowercase text.
+_CHUNK_KW: Dict[str, List[str]] = {
+    "casualties_damage":      ["killed", "dead", "died", "death", "injur", "wound", "casualt", "fatali", "bodies", "missing", "toll"],
+    "military_operations":    ["troops", "soldier", "military", "forces", "airstrike", "strike", "bomb", "missile", "army", "navy", "combat", "weapon", "artillery", "drone", "offensive", "battalion"],
+    "government_response":    ["government", "minister", "president", "prime minister", "official", "parliament", "legislat", "policy", "announced", "statement", "declar", "cabinet", "administration"],
+    "international_reaction": ["united nations", "nato", "european union", "international", "foreign minister", "sanction", "condemn", "allies", "g7", "g20", "embassy", "diplomacy"],
+    "expert_analysis":        ["expert", "analyst", "researcher", "professor", "economist", "according to", "study shows", "findings", "analysis", "think tank", "institute"],
+    "civilian_testimony":     ["resident", "witness", "survivor", "victim", "family", "community", "people said", "told reporters", "described", "refugee", "displaced"],
+    "economic_impact":        ["economy", "market", "billion", "million", "trade", "gdp", "inflation", "price", "financial", "investment", "stock", "currency", "growth", "recession"],
+    "humanitarian_situation": ["aid", "refugee", "displaced", "shelter", "food supply", "water", "relief", "humanitarian", "starvation", "evacuat"],
+    "legal_judicial":         ["court", "lawsuit", "legal", "judge", "verdict", "trial", "prosecut", "arrest", "charged", "sentence", "convict", "indictment"],
+    "future_developments":    ["will ", "next week", "upcoming", "planned", "scheduled", "expected to", "due to", "anticipated", "proposed", "deadline"],
+    "background_context":     ["history", "since ", "decade", "year ago", "background", "context", "previous", "earlier", "former", "traditionally", "has long", "for years"],
+    "political_dynamics":     ["party", "election", "vote", "opposition", "coalition", "political", "democrat", "republican", "senator", "congress", "campaign", "polling"],
+    "science_findings":       ["research", "study", "scientist", "laborator", "experiment", "discovery", "published", "journal", "clinical trial", "data shows"],
+    "health_impact":          ["health", "disease", "patient", "hospital", "treatment", "medical", "vaccine", "symptom", "outbreak", "pandemic", "diagnosis"],
+    "sports_result":          ["score", " won ", " won.", "defeated", "champion", "title", "goal", "points", "standings", "final score", "qualifying"],
+    "sports_narrative":       ["played", "game", "match", "tournament", "team", "player", "coach", "stadium", "season", "league", "manager"],
+}
+
+
 def classify_chunk_aspect(chunk_text: str) -> Tuple[str, float]:
     """
-    Classify a single paragraph chunk into the best-matching aspect.
+    Classify a paragraph chunk into the best-matching aspect using keyword
+    matching — runs in microseconds vs. ~1s for the NLI model.
 
-    Returns:
-        (aspect_label, confidence)
-    Falls back to ("event_core", 0.0) if the model is unavailable.
+    Returns (aspect_label, confidence).
     """
-    candidate_labels = list(ASPECT_LABELS.values())
-    label_keys = list(ASPECT_LABELS.keys())
+    text = chunk_text.lower()
+    scores: Dict[str, int] = {}
+    for aspect, keywords in _CHUNK_KW.items():
+        scores[aspect] = sum(1 for kw in keywords if kw in text)
 
-    scores = _nli_classify(chunk_text, candidate_labels)
-    best_description = max(scores, key=scores.__getitem__)
-    best_key = label_keys[candidate_labels.index(best_description)]
-    best_score = scores[best_description]
-
-    return (best_key, float(best_score))
+    best = max(scores, key=scores.__getitem__)
+    count = scores[best]
+    if count == 0:
+        return ("event_core", 0.5)
+    # Normalise to a 0-1 confidence proxy
+    confidence = min(1.0, count / 3.0)
+    return (best, confidence)

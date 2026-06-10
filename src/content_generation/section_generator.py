@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 
 from loguru import logger
@@ -190,9 +191,8 @@ def generate_sections(
     lede_text = _call_groq(_SECTION_SYSTEM, lede_prompt, groq_client, max_tokens=150) or ""
     logger.info(f"  Lede generated ({len(lede_text.split())} words)")
 
-    # ── Body sections ────────────────────────────────────────────────
-    generated: List[GeneratedSection] = []
-    for section in flow.sections:
+    # ── Body sections — generated in parallel (max 3 concurrent Groq calls) ──
+    def _gen_one(section: SectionPlan) -> Optional[GeneratedSection]:
         section_query = f"{section.heading} {' '.join(section.aspects)}"
         chunks = semantic_search(
             query_text=section_query,
@@ -201,31 +201,46 @@ def generate_sections(
             top_k=5,
         )
         if not chunks:
-            # Fall back to confidence-sorted scroll if semantic search returns nothing
             chunks = get_chunks_by_aspect(cluster_id, section.aspects, top_k=5)
 
         quotes = collect_quotes_from_chunks(chunks)
         prompt = _build_section_prompt(section, chunks, quotes)
-
         token_budget = max(200, int(section.word_target * 1.4))
         body = _call_groq(_SECTION_SYSTEM, prompt, groq_client, max_tokens=token_budget)
 
         if not body:
             logger.warning(f"  Section '{section.heading}' failed — skipping")
-            continue
+            return None
 
-        # Strip any stray heading lines the model may have added
         lines = body.splitlines()
-        cleaned_lines = [l for l in lines if not l.strip().startswith("#")]
-        body = "\n".join(cleaned_lines).strip()
-
-        generated.append(GeneratedSection(
+        body = "\n".join(l for l in lines if not l.strip().startswith("#")).strip()
+        return GeneratedSection(
             heading=section.heading,
             body=body,
             aspects_used=section.aspects,
             quotes_embedded=quotes[:4],
             word_count=len(body.split()),
-        ))
-        logger.info(f"  Section '{section.heading}' → {len(body.split())} words")
+        )
+
+    # Preserve section order: submit with explicit index, collect by index
+    generated: List[GeneratedSection] = []
+    results: Dict[int, Optional[GeneratedSection]] = {}
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = {pool.submit(_gen_one, sec): i for i, sec in enumerate(flow.sections)}
+        for fut in as_completed(futures):
+            idx = futures[fut]
+            try:
+                result = fut.result()
+            except Exception as e:
+                logger.warning(f"  Section {idx} raised: {e}")
+                result = None
+            results[idx] = result
+
+    for i in sorted(results):
+        r = results[i]
+        if r:
+            generated.append(r)
+            logger.info(f"  Section '{r.heading}' → {r.word_count} words")
 
     return lede_text, generated

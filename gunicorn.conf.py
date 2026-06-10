@@ -13,8 +13,10 @@ bind     = f"0.0.0.0:{os.getenv('PORT', '5006')}"
 backlog  = 128
 
 # ── Workers ──────────────────────────────────────────────────
+# NOTE: production uses `uvicorn wsgi:app` directly (see render.yaml / Render start command).
+# This file is kept for local gunicorn usage only.
 workers      = 1                                # MUST stay 1 (shared in-memory state)
-worker_class = "uvicorn.workers.UvicornWorker"  # ASGI worker for FastAPI
+worker_class = "uvicorn.workers.UvicornWorker"  # requires uvicorn[standard] installed
 
 # ── Timeouts ─────────────────────────────────────────────────
 timeout          = 300   # social scrape + AI generation can take ~2 min

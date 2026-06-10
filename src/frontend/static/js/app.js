@@ -569,13 +569,13 @@ async function loadCoverage(realIdx) {
           `).join('')}
         </ul>`;
     }
-    // Launch summary, timeline, and social reactions simultaneously
-    generateSummary(realIdx);
+    // Launch RAG generation, timeline, and social reactions simultaneously
+    generateSummaryRag(realIdx);
     generateTimeline(realIdx);
     loadSocialReactions(realIdx);
   } catch(e) {
     $('coverage-section').innerHTML = coverageEmptyHTML(`Error: ${e.message}`);
-    generateSummary(realIdx);
+    generateSummaryRag(realIdx);
     generateTimeline(realIdx);
     loadSocialReactions(realIdx);
   }
@@ -716,68 +716,107 @@ function collectEditedContent() {
   return { edited_title: title, edited_subtitle: subtitle || undefined, edited_body: body.trim(), category, selected_image: SELECTED_IMAGE || undefined };
 }
 
+function renderSummary(s, realIdx) {
+  CURRENT_SUMM = s;
+  const bodyHtml = bodyToHtml(s.body || '');
+  const srcsHtml = (s.sources_list||[]).map((src,n)=>`
+    <li class="sum-src-item">
+      <span class="sum-src-num">${n+1}</span>
+      <div class="sum-src-body">
+        <span class="sum-src-name">${esc(src.name||'')}</span>
+        ${src.headline?`<span class="sum-src-hl">— ${esc(src.headline.slice(0,90))}</span>`:''}
+        ${src.url?`<a class="sum-src-url" href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.url.slice(0,60))}…</a>`:''}
+      </div>
+    </li>`).join('');
+
+  const pipelineBadge = s.generation_pipeline === 'aspect_rag_v1'
+    ? `<span class="sum-badge sum-badge--rag">RAG Pipeline</span>`
+    : `<span class="sum-badge">DNL Briefing</span>`;
+
+  $('summary-section').innerHTML = `
+    <div class="summary-result">
+      <h2 class="sum-title" contenteditable="false">${esc(s.title||'News Brief')}</h2>
+      <p class="sum-subtitle" contenteditable="false">${esc((s.subtitle||s.sub_heading||'').replace(/\*+/g,'').replace(/^sub$/i,'').trim())}</p>
+      <button class="sum-category-btn" style="display:none" aria-hidden="true">${esc(s.category||'World')}</button>
+      <div class="sum-meta-row">
+        ${pipelineBadge}
+        <span class="sum-meta-sources">${(s.sources_list||[]).length} source${(s.sources_list||[]).length!==1?'s':''} synthesised</span>
+      </div>
+      <div class="sum-divider"></div>
+      <div class="sum-body">${bodyHtml}</div>
+      ${s.reporter ? `<div class="sum-reporter">Reported by <strong>${esc(s.reporter)}</strong></div>` : ''}
+      <div class="sum-sources-block">
+        <div class="sum-sources-title">Sources</div>
+        <ol class="sum-src-list">${srcsHtml}</ol>
+      </div>
+      <div class="sum-actions">
+        <button class="edit-briefing-btn" onclick="toggleEditMode()">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9 1l3 3-7 7H2V8l7-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+          Edit Story
+        </button>
+        <button class="download-btn" onclick="downloadDocx(${realIdx})">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Download .docx
+        </button>
+        <span class="sum-note">Channel-ready · ${(s.sources_list||[]).length} source(s)</span>
+      </div>
+    </div>`;
+
+  const pb = $('publish-btn');
+  if (pb) pb.style.display = '';
+  EDIT_MODE = false;
+  runNewsCheck();
+}
+
 async function generateSummary(realIdx) {
+  // Legacy path — kept for fallback only; production uses generateSummaryRag
   try {
     const res  = await fetch(`/api/articles/${realIdx}/summary`, {method:'POST'});
     const data = await res.json();
-
     if (data.status !== 'success' || !data.summary) {
       $('summary-section').innerHTML = `<div class="coverage-empty">Error: ${esc(data.message||'Generation failed')}</div>`;
       return;
     }
+    renderSummary(data.summary, realIdx);
+  } catch(e) {
+    $('summary-section').innerHTML = `<div class="coverage-empty">Network error: ${esc(e.message)}</div>`;
+  }
+}
 
-    CURRENT_SUMM = data.summary;
-    const s      = data.summary;
+async function generateSummaryRag(realIdx) {
+  $('summary-section').innerHTML = `<div class="coverage-loading">
+    <span class="cov-spinner"></span>
+    <span id="rag-status-msg">Running RAG pipeline…</span>
+  </div>`;
 
-    const bodyHtml    = bodyToHtml(s.body || '');
+  try {
+    const startRes  = await fetch(`/api/articles/${realIdx}/rag-generate`, {method:'POST'});
+    const startData = await startRes.json();
+    if (startData.status === 'error') {
+      $('summary-section').innerHTML = `<div class="coverage-empty">Error: ${esc(startData.message||'Failed to start')}</div>`;
+      return;
+    }
 
-    const srcsHtml = (s.sources_list||[]).map((src,n)=>`
-      <li class="sum-src-item">
-        <span class="sum-src-num">${n+1}</span>
-        <div class="sum-src-body">
-          <span class="sum-src-name">${esc(src.name||'')}</span>
-          ${src.headline?`<span class="sum-src-hl">— ${esc(src.headline.slice(0,90))}</span>`:''}
-          ${src.url?`<a class="sum-src-url" href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.url.slice(0,60))}…</a>`:''}
-        </div>
-      </li>`).join('');
+    // Poll until done
+    let elapsed = 0;
+    while (true) {
+      await new Promise(r => setTimeout(r, 4000));
+      elapsed += 4;
+      const msg = $('rag-status-msg');
+      if (msg) msg.textContent = `Running RAG pipeline… ${elapsed}s`;
 
-    $('summary-section').innerHTML = `
-      <div class="summary-result">
-        <h2 class="sum-title" contenteditable="false">${esc(s.title||'News Brief')}</h2>
-        <p class="sum-subtitle" contenteditable="false">${esc((s.subtitle||s.sub_heading||'').replace(/\*+/g,'').replace(/^sub$/i,'').trim())}</p>
-        <button class="sum-category-btn" style="display:none" aria-hidden="true">${esc(s.category||'World')}</button>
-        <div class="sum-meta-row">
-          <span class="sum-badge">DNL Briefing</span>
-          <span class="sum-meta-sources">${(s.sources_list||[]).length} source${(s.sources_list||[]).length!==1?'s':''} synthesised</span>
-        </div>
-        <div class="sum-divider"></div>
-        <div class="sum-body">${bodyHtml}</div>
-        ${s.reporter ? `<div class="sum-reporter">Reported by <strong>${esc(s.reporter)}</strong></div>` : ''}
-        <div class="sum-sources-block">
-          <div class="sum-sources-title">Sources</div>
-          <ol class="sum-src-list">${srcsHtml}</ol>
-        </div>
-        <div class="sum-actions">
-          <button class="edit-briefing-btn" onclick="toggleEditMode()">
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9 1l3 3-7 7H2V8l7-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-            Edit Story
-          </button>
-          <button class="download-btn" onclick="downloadDocx(${realIdx})">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Download .docx
-          </button>
-          <span class="sum-note">Channel-ready · ${(s.sources_list||[]).length} source(s)</span>
-        </div>
-      </div>`;
+      const res  = await fetch(`/api/articles/${realIdx}/rag-status`);
+      const data = await res.json();
 
-    // Show the footer publish button now that a summary exists
-    const pb = $('publish-btn');
-    if (pb) pb.style.display = '';
-
-    EDIT_MODE = false;
-
-    // Auto-run news verification as soon as the briefing is ready
-    runNewsCheck();
+      if (data.status === 'error') {
+        $('summary-section').innerHTML = `<div class="coverage-empty">Error: ${esc(data.message||'Generation failed')}</div>`;
+        return;
+      }
+      if (data.status === 'done') {
+        renderSummary(data.summary, realIdx);
+        return;
+      }
+    }
   } catch(e) {
     $('summary-section').innerHTML = `<div class="coverage-empty">Network error: ${esc(e.message)}</div>`;
   }
