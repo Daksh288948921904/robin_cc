@@ -1524,7 +1524,9 @@ async function runNewsCheck() {
       ? `<div class="nc-flags nc-negframing"><span class="nc-flags-label nc-negframing-label">Negative Framing</span>${c.negative_framing.map(f=>`<span class="nc-flag nc-negframing-tag">"${esc(f)}"</span>`).join('')}</div>`
       : '';
 
-    const claimsHtml = '';
+    const claimsHtml = c.key_claims && c.key_claims.length
+      ? `<div class="nc-claims"><span class="nc-claims-label">Key Claims</span><ul>${c.key_claims.map(cl=>`<li>${esc(cl)}</li>`).join('')}</ul></div>`
+      : '';
 
     // Reason text is brighter (inherits card color) when card is flagged
     const credReasonClass = credColor !== 'nc-green' ? 'nc-card-reason nc-card-reason--flagged' : 'nc-card-reason';
