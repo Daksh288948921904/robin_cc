@@ -630,13 +630,24 @@ async def rag_generate(request: Request, idx: int):
     t = threading.Thread(target=_run_rag_generate, args=(idx, trend, cluster_articles), daemon=True)
     t.start()
 
-    def _watchdog(key: str, thread: threading.Thread, timeout: int = 120):
-        thread.join(timeout)
+    def _watchdog(key: str, thread: threading.Thread):
+        # 2 minutes: still running → show waiting message (not an error)
+        thread.join(120)
         if thread.is_alive():
             with _rag_lock:
                 if _rag_state.get(key, {}).get('running'):
-                    _rag_state[key] = {'running': False, 'done': True, 'error': f'Generation timed out after {timeout}s — sources too thin or API slow'}
-            logger.warning(f'RAG watchdog: idx={key} timed out after {timeout}s')
+                    _rag_state[key] = {'running': True, 'done': False, 'error': None,
+                                       'message': 'Too many sources — please wait, this may take a moment…'}
+            logger.info(f'RAG watchdog: idx={key} still running at 2min, showing wait message')
+        else:
+            return
+        # 5 minutes total: give up and show error
+        thread.join(180)
+        if thread.is_alive():
+            with _rag_lock:
+                if _rag_state.get(key, {}).get('running'):
+                    _rag_state[key] = {'running': False, 'done': True, 'error': 'Generation timed out after 5 minutes — try again or check source quality'}
+            logger.warning(f'RAG watchdog: idx={key} timed out after 5min')
 
     threading.Thread(target=_watchdog, args=(key, t), daemon=True).start()
 
@@ -650,7 +661,7 @@ async def rag_status(request: Request, idx: int):
         state = dict(_rag_state.get(key, {'running': False, 'done': False, 'error': None}))
 
     if state.get('running'):
-        return JSONResponse({'status': 'running'})
+        return JSONResponse({'status': 'running', 'message': state.get('message', '')})
     if state.get('error'):
         return JSONResponse({'status': 'error', 'message': state['error']})
     if state.get('done'):

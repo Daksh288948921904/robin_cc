@@ -805,7 +805,6 @@ async function generateSummaryRag(realIdx) {
       await new Promise(r => setTimeout(r, 4000));
       elapsed += 4;
       const msg = $('rag-status-msg');
-      if (msg) msg.textContent = `Running RAG pipeline… ${elapsed}s`;
 
       const res  = await fetch(`/api/articles/${realIdx}/rag-status`);
       const data = await res.json();
@@ -818,6 +817,8 @@ async function generateSummaryRag(realIdx) {
         renderSummary(data.summary, realIdx);
         return;
       }
+      // Show server-provided wait message (e.g. after 2min) or default elapsed counter
+      if (msg) msg.textContent = data.message || `Running RAG pipeline… ${elapsed}s`;
     }
   } catch(e) {
     $('summary-section').innerHTML = `<div class="coverage-empty">Network error: ${esc(e.message)}</div>`;
