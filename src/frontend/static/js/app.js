@@ -1503,15 +1503,39 @@ async function runNewsCheck() {
     const trendLabel = c.trending === 'trending' ? 'TRENDING' : 'NOT TRENDING';
     const toneLabel  = (c.tone || 'neutral').toUpperCase();
 
+    // Alert banner: shown when score < 65, negative tone, or not VERIFIED
+    const needsAlert = c.overall !== 'VERIFIED' || c.credibility_score < 65 || c.tone === 'negative';
+    const alertHtml = needsAlert && c.alert_reason
+      ? `<div class="nc-alert-box ${overallColor === 'nc-green' ? 'nc-orange' : overallColor}">
+           <div class="nc-alert-icon"><svg width="13" height="13" viewBox="0 0 12 12" fill="none"><path d="M6 1L11 10H1L6 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6 5v2.5M6 9h.01" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></div>
+           <div class="nc-alert-text">${esc(c.alert_reason)}</div>
+         </div>`
+      : '';
+
     const redFlagsHtml = c.red_flags && c.red_flags.length
-      ? `<div class="nc-flags"><span class="nc-flags-label">⚠ Red flags</span>${c.red_flags.map(f=>`<span class="nc-flag">${esc(f)}</span>`).join('')}</div>`
+      ? `<div class="nc-flags"><span class="nc-flags-label">Red Flags</span>${c.red_flags.map(f=>`<span class="nc-flag">${esc(f)}</span>`).join('')}</div>`
+      : '';
+
+    const speculHtml = c.speculation_indicators && c.speculation_indicators.length
+      ? `<div class="nc-flags nc-specul"><span class="nc-flags-label nc-specul-label">Speculation Indicators</span>${c.speculation_indicators.map(f=>`<span class="nc-flag nc-specul-tag">"${esc(f)}"</span>`).join('')}</div>`
+      : '';
+
+    const negFramingHtml = c.tone === 'negative' && c.negative_framing && c.negative_framing.length
+      ? `<div class="nc-flags nc-negframing"><span class="nc-flags-label nc-negframing-label">Negative Framing</span>${c.negative_framing.map(f=>`<span class="nc-flag nc-negframing-tag">"${esc(f)}"</span>`).join('')}</div>`
       : '';
 
     const claimsHtml = c.key_claims && c.key_claims.length
-      ? `<div class="nc-claims"><span class="nc-claims-label">Key claims</span><ul>${c.key_claims.map(cl=>`<li>${esc(cl)}</li>`).join('')}</ul></div>`
+      ? `<div class="nc-claims"><span class="nc-claims-label">Key Claims</span><ul>${c.key_claims.map(cl=>`<li>${esc(cl)}</li>`).join('')}</ul></div>`
       : '';
 
+    // Reason text is brighter (inherits card color) when card is flagged
+    const credReasonClass = credColor !== 'nc-green' ? 'nc-card-reason nc-card-reason--flagged' : 'nc-card-reason';
+    const fakeReasonClass  = fakeColor  !== 'nc-green' ? 'nc-card-reason nc-card-reason--flagged' : 'nc-card-reason';
+    const toneReasonClass  = toneColor  !== 'nc-green' ? 'nc-card-reason nc-card-reason--flagged' : 'nc-card-reason';
+
     sec.innerHTML = `
+      ${alertHtml}
+
       <div class="nc-overall ${overallColor}">
         <div class="nc-overall-left">
           <span class="nc-overall-label">Overall Verdict</span>
@@ -1527,7 +1551,7 @@ async function runNewsCheck() {
             <span>Credibility</span>
           </div>
           <div class="nc-card-badge">${credLabel}</div>
-          <div class="nc-card-reason">${esc(c.credibility_reason)}</div>
+          <div class="${credReasonClass}">${esc(c.credibility_reason)}</div>
         </div>
 
         <div class="nc-card ${fakeColor}">
@@ -1536,7 +1560,7 @@ async function runNewsCheck() {
             <span>Authenticity</span>
           </div>
           <div class="nc-card-badge">${fakeLabel}</div>
-          <div class="nc-card-reason">${esc(c.fake_reason)}</div>
+          <div class="${fakeReasonClass}">${esc(c.fake_reason)}</div>
         </div>
 
         <div class="nc-card ${toneColor}">
@@ -1545,7 +1569,7 @@ async function runNewsCheck() {
             <span>Tone</span>
           </div>
           <div class="nc-card-badge">${toneLabel}</div>
-          <div class="nc-card-reason">${esc(c.tone_reason)}</div>
+          <div class="${toneReasonClass}">${esc(c.tone_reason)}</div>
         </div>
 
         <div class="nc-card ${trendColor}">
@@ -1558,7 +1582,7 @@ async function runNewsCheck() {
         </div>
       </div>
 
-      ${redFlagsHtml}${claimsHtml}
+      ${redFlagsHtml}${speculHtml}${negFramingHtml}${claimsHtml}
       <button class="nc-rerun-btn" onclick="runNewsCheck()">Re-run</button>`;
   } catch(e) {
     sec.innerHTML = `<div class="nc-error">Network error: ${esc(String(e))}</div>`;

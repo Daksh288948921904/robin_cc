@@ -3190,10 +3190,35 @@ body::before {
   color:#6b7280;margin-top:2px;
 }
 
+/* Alert banner — shown when score low, tone negative, or not VERIFIED */
+.nc-alert-box{
+  display:flex;align-items:flex-start;gap:9px;
+  padding:10px 13px;border-radius:10px;margin-bottom:10px;
+  border:1px solid currentColor;
+  font-size:11px;line-height:1.55;
+}
+.nc-alert-icon{flex-shrink:0;margin-top:1px;opacity:.85}
+.nc-alert-text{color:inherit;opacity:.9}
+
+/* Flagged card reason — inherits card color instead of plain gray */
+.nc-card-reason--flagged{
+  font-size:10.5px;line-height:1.5;
+  color:inherit;opacity:.75;margin-top:2px;
+}
+
 /* bottom extras */
 .nc-flags{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .nc-flags-label{font-size:10px;font-weight:700;color:#f87171;text-transform:uppercase;letter-spacing:.08em;width:100%}
 .nc-flag{font-size:11px;color:#f87171;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);padding:2px 8px;border-radius:20px}
+
+/* Speculation indicators */
+.nc-specul-label{color:#fbbf24 !important}
+.nc-specul-tag{color:#fbbf24 !important;background:rgba(251,191,36,.1) !important;border-color:rgba(251,191,36,.3) !important;font-style:italic}
+
+/* Negative framing tags */
+.nc-negframing-label{color:#fb923c !important}
+.nc-negframing-tag{color:#fb923c !important;background:rgba(251,146,60,.1) !important;border-color:rgba(251,146,60,.3) !important;font-style:italic}
+
 .nc-claims{margin-top:8px}
 .nc-claims-label{font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:4px}
 .nc-claims ul{margin:0;padding-left:16px;font-size:11px;color:#9ca3af;line-height:1.7}
