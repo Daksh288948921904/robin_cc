@@ -266,7 +266,7 @@ def assemble_article(
     )
 
     # ── Validation warnings ─────────────────────────────────────────
-    ceiling  = audit_result.honest_word_ceiling if audit_result else 900
+    ceiling  = 9999  # no word limit — write as much as source material supports
     warnings = _validate_article(body, ceiling)
     for w in warnings:
         logger.warning(f"Assembly validation: {w}")

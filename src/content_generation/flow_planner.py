@@ -106,7 +106,7 @@ You will be given:
   - The aspect inventory (which thematic aspects have source material, and how many chunks each)
   - Source quality (rich / adequate / thin)
 
-Your job: Design an ordered section plan for a 700-900 word article.
+Your job: Design an ordered section plan. Write as much as the source material supports — no artificial word limit.
 
 RULES:
 1. Return ONLY valid JSON — no prose, no markdown fences.
@@ -114,7 +114,7 @@ RULES:
    - heading: 3-5 words, SPECIFIC to THIS story (not generic like "Background" or "Conclusion")
    - aspects: list of 1-3 aspect labels from the inventory to draw source material from
    - tone: one of urgent / factual / human / critical / analytical / balanced / narrative / forward
-   - word_target: integer 100-220
+   - word_target: integer 150-300 (use all available source material — do not cut short)
 3. Only use aspects that appear in the provided inventory.
 4. The final section must advance the story — not summarise it.
 5. Do NOT add a "lede_aspects" key — the lede is always built from event_core.

@@ -522,16 +522,16 @@ def generate_article(
         logger.error("No source articles in trend")
         return None
 
-    # Pre-check: skip the full 8-call RAG pipeline for very thin sources
+    # Pre-check: only bypass RAG when single source with < 100 words
     total_words = sum(
         len((a.get('story', '') or a.get('body', '') or a.get('content', '')).split())
         for a in source_articles
     )
-    if total_words < 150:
-        logger.warning(f"⚠️  Total source words={total_words} < 150 — bypassing RAG, using direct LLM")
+    if len(source_articles) == 1 and total_words < 100:
+        logger.warning(f"⚠️  Single source, {total_words}w — bypassing RAG, using direct LLM")
         try:
             from src.content_generation.multi_source_summary import generate_summary
-            direct = generate_summary(source_articles[0], source_articles[1:])
+            direct = generate_summary(source_articles[0], [])
             if direct:
                 direct['generation_pipeline'] = 'direct_llm'
                 direct['is_fallback'] = True

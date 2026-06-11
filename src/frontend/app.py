@@ -338,12 +338,12 @@ def _run_rag_generate(idx: int, trend: dict, source_articles: list):
         )
         logger.info(f'RAG generate idx={idx}: {len(source_articles)} sources, {total_words} total words')
 
-        if total_words < 150:
-            # Too thin for the full 8-call RAG pipeline — go straight to direct LLM
-            logger.warning(f'Thin source ({total_words}w) — skipping RAG, using direct LLM')
+        if len(source_articles) == 1 and total_words < 100:
+            # Single tiny source — skip RAG, use direct LLM (1 call)
+            logger.warning(f'Single source {total_words}w — skipping RAG, using direct LLM')
             from src.content_generation.multi_source_summary import generate_summary
             from src.content_generation.article_generator import _normalize_direct_article
-            direct = generate_summary(source_articles[0], source_articles[1:])
+            direct = generate_summary(source_articles[0], [])
             if direct:
                 direct['generation_pipeline'] = 'direct_llm'
                 direct['is_fallback'] = True
