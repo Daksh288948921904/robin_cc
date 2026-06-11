@@ -522,6 +522,24 @@ def generate_article(
         logger.error("No source articles in trend")
         return None
 
+    # Pre-check: skip the full 8-call RAG pipeline for very thin sources
+    total_words = sum(
+        len((a.get('story', '') or a.get('body', '') or a.get('content', '')).split())
+        for a in source_articles
+    )
+    if total_words < 150:
+        logger.warning(f"⚠️  Total source words={total_words} < 150 — bypassing RAG, using direct LLM")
+        try:
+            from src.content_generation.multi_source_summary import generate_summary
+            direct = generate_summary(source_articles[0], source_articles[1:])
+            if direct:
+                direct['generation_pipeline'] = 'direct_llm'
+                direct['is_fallback'] = True
+                return _normalize_direct_article(direct, topic, source_articles)
+        except Exception as _e:
+            logger.warning(f"Direct LLM fallback failed ({_e}), using plain fallback")
+        return generate_fallback_article(trend)
+
     client = get_groq_client()
     if not client:
         logger.warning("Groq client unavailable, using fallback")

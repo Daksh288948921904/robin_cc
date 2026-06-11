@@ -331,8 +331,30 @@ def _rag_article_to_summary(article: dict, source_articles: list) -> dict:
 def _run_rag_generate(idx: int, trend: dict, source_articles: list):
     key = str(idx)
     try:
-        from src.content_generation.article_generator import generate_article
-        article = generate_article(trend)
+        # Count total words across all source articles upfront
+        total_words = sum(
+            len((a.get('story', '') or a.get('body', '') or a.get('content', '')).split())
+            for a in source_articles
+        )
+        logger.info(f'RAG generate idx={idx}: {len(source_articles)} sources, {total_words} total words')
+
+        if total_words < 150:
+            # Too thin for the full 8-call RAG pipeline — go straight to direct LLM
+            logger.warning(f'Thin source ({total_words}w) — skipping RAG, using direct LLM')
+            from src.content_generation.multi_source_summary import generate_summary
+            from src.content_generation.article_generator import _normalize_direct_article
+            direct = generate_summary(source_articles[0], source_articles[1:])
+            if direct:
+                direct['generation_pipeline'] = 'direct_llm'
+                direct['is_fallback'] = True
+                article = _normalize_direct_article(direct, trend.get('topic', 'News Update'), source_articles)
+            else:
+                from src.content_generation.article_generator import generate_fallback_article
+                article = generate_fallback_article(trend)
+        else:
+            from src.content_generation.article_generator import generate_article
+            article = generate_article(trend)
+
         if not article:
             with _rag_lock:
                 _rag_state[key] = {'running': False, 'done': True, 'error': 'Pipeline returned no article — sources may be too thin'}
@@ -607,6 +629,16 @@ async def rag_generate(request: Request, idx: int):
 
     t = threading.Thread(target=_run_rag_generate, args=(idx, trend, cluster_articles), daemon=True)
     t.start()
+
+    def _watchdog(key: str, thread: threading.Thread, timeout: int = 120):
+        thread.join(timeout)
+        if thread.is_alive():
+            with _rag_lock:
+                if _rag_state.get(key, {}).get('running'):
+                    _rag_state[key] = {'running': False, 'done': True, 'error': f'Generation timed out after {timeout}s — sources too thin or API slow'}
+            logger.warning(f'RAG watchdog: idx={key} timed out after {timeout}s')
+
+    threading.Thread(target=_watchdog, args=(key, t), daemon=True).start()
 
     return JSONResponse({'status': 'started', 'message': 'RAG generation started'}, status_code=202)
 
@@ -1350,6 +1382,6 @@ if __name__ == '__main__':
     print("=" * 60)
     print(f"\nProject root: {PROJECT_ROOT}")
     print(f"Output dir:   {OUTPUT_DIR}")
-    print("\nStarting server at http://localhost:5006")
+    print("\nStarting server at http://localhost:5008")
     print("Press Ctrl+C to stop\n")
-    uvicorn.run('src.frontend.app:app', host='0.0.0.0', port=5006, reload=False)
+    uvicorn.run('src.frontend.app:app', host='0.0.0.0', port=5008, reload=False)
