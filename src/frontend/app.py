@@ -18,6 +18,7 @@ from typing import Optional
 PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
@@ -48,7 +49,33 @@ def _push_to_global_news(article: dict, feed_id: str = '') -> None:
         logger.warning('Global News push failed: %s', _e)
 
 
-app = FastAPI()
+def _auto_load_articles():
+    """Load the most recent scraped JSON on startup so articles survive redeploys."""
+    global SCRAPED_ARTICLES, _current_json_path
+    try:
+        output_dir = PROJECT_ROOT / 'output' / 'json'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        json_files = list(output_dir.glob('scraped_*.json'))
+        if not json_files:
+            print('[Startup] No saved article files found — waiting for first scrape')
+            return
+        filepath = max(json_files, key=lambda p: p.stat().st_mtime)
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            SCRAPED_ARTICLES = data.get('articles', data)
+        _current_json_path = filepath
+        print(f'[Startup] Auto-loaded {len(SCRAPED_ARTICLES)} articles from {filepath.name}')
+    except Exception as e:
+        print(f'[Startup] Auto-load failed: {e}')
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _auto_load_articles()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 _USERS = {
     'Rohit@Robin.cc': (
