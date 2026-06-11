@@ -402,6 +402,56 @@ def _build_repair_instructions(failures: list, word_ceiling: int) -> str:
 
 
 # ===========================================
+# FIELD NORMALIZER — multi_source_summary → pipeline format
+# ===========================================
+
+def _normalize_direct_article(direct: Dict, topic: str, source_articles: List[Dict]) -> Optional[Dict]:
+    """Convert multi_source_summary output dict to standard pipeline format."""
+    if not direct:
+        return None
+
+    title    = direct.get("title", topic)
+    subtitle = direct.get("subtitle", "")
+    body     = direct.get("body", "")
+    location = (direct.get("location") or "INTERNATIONAL").upper()
+    category = direct.get("category", "World")
+    today    = datetime.utcnow().strftime("%B %d, %Y")
+
+    # Build formatted story matching the pipeline shape so _rag_article_to_summary extracts correctly
+    formatted_story = (
+        f"# {title}\n\n"
+        f"### {subtitle}\n\n"
+        f"BYLINE: robin cc | {today}\n"
+        f"LOCATION: {location}\n"
+        f"CATEGORY: {category}\n"
+        f"---\n\n"
+        f"{body}"
+    )
+
+    sources_list = direct.get("sources_list", [])
+    sources_used = list({s.get("name", "Unknown") for s in sources_list}) or \
+                   list({a.get("source_name", "Unknown") for a in source_articles})
+
+    return {
+        "heading":      title,
+        "sub_heading":  subtitle,
+        "story":        formatted_story,
+        "dateline":     location,
+        "topic":        topic,
+        "timestamp":    format_timestamp(),
+        "sources_used": sources_used,
+        "source_count": len(source_articles),
+        "word_count":   len(body.split()),
+        "keywords":     [],
+        "generated_at": direct.get("generated_at", datetime.utcnow().isoformat()),
+        "model_used":   "llama-3.3-70b-versatile",
+        "source_quality": "thin",
+        "generation_pipeline": direct.get("generation_pipeline", "direct_llm"),
+        "is_fallback":  direct.get("is_fallback", True),
+    }
+
+
+# ===========================================
 # MAIN GENERATION FUNCTION  (Aspect-RAG Pipeline)
 # ===========================================
 
@@ -454,7 +504,16 @@ def generate_article(
         source_articles, cluster_id, story_type, session_id
     )
     if not aspect_inventory:
-        logger.warning("Chunking produced no usable aspects — using fallback")
+        logger.warning("Chunking produced no usable aspects — trying direct LLM generation")
+        try:
+            from src.content_generation.multi_source_summary import generate_summary
+            direct = generate_summary(source_articles[0], source_articles[1:])
+            if direct:
+                direct['generation_pipeline'] = 'direct_llm'
+                direct['is_fallback'] = True
+                return _normalize_direct_article(direct, topic, source_articles)
+        except Exception as _e:
+            logger.warning(f"Direct LLM fallback failed ({_e}), using plain fallback")
         return generate_fallback_article(trend)
     logger.info(f"   Aspect inventory: {dict(sorted(aspect_inventory.items(), key=lambda x: -x[1]))}")
 
@@ -469,7 +528,7 @@ def generate_article(
             if direct:
                 direct['generation_pipeline'] = 'direct_llm'
                 direct['is_fallback'] = True
-                return direct
+                return _normalize_direct_article(direct, topic, source_articles)
         except Exception as _e:
             logger.warning(f"Direct LLM fallback failed ({_e}), continuing with RAG")
 
@@ -806,57 +865,44 @@ def generate_fallback_article(trend: Dict) -> Optional[Dict]:
         if not source_articles:
             return None
 
-        # Collect actual source names for the heading/body
-        source_names = list(dict.fromkeys(
-            a.get("source_name", "").strip()
-            for a in source_articles
-            if a.get("source_name", "").strip() and a.get("source_name") != "Unknown"
-        ))
-        if not source_names:
-            source_names = ["multiple outlets"]
-
-        # Create simple headline using actual source names
-        if len(source_names) == 1:
-            heading = f"{source_names[0]} Reports on {topic}"
-            byline = f"{source_names[0]} reported on"
-        elif len(source_names) == 2:
-            heading = f"{source_names[0]}, {source_names[1]} Report on {topic}"
-            byline = f"{source_names[0]} and {source_names[1]} reported on"
-        else:
-            heading = f"{source_names[0]}, {source_names[1]}, and Others Report on {topic}"
-            byline = f"{source_names[0]}, {source_names[1]}, and {len(source_names) - 2} other outlet(s) reported on"
+        # Create simple headline from topic only — no outlet names in titles
+        heading = topic
 
         # Combine article summaries
         story_parts = [f"**{topic}**\n"]
 
         dateline = infer_dateline(source_articles)
         story_parts.append(f"{dateline}, {datetime.now().strftime('%B %d')} – ")
-        story_parts.append(f"{byline} developments related to {topic}.\n\n")
-        
+        story_parts.append(f"Developments related to {topic}.\n\n")
+
         for i, article in enumerate(source_articles[:5], 1):
-            source = article.get('source_name', 'Unknown')
             headline = article.get('heading', '')
             preview = article.get('story', '')[:200]
-            
-            story_parts.append(f"## Report from {source}\n\n")
-            story_parts.append(f"**{headline}**\n\n")
-            story_parts.append(f"{preview}...\n\n")
+
+            if headline:
+                story_parts.append(f"## {headline[:80]}\n\n")
+            else:
+                story_parts.append(f"## Source {i}\n\n")
+            if preview:
+                story_parts.append(f"{preview}...\n\n")
         
         story = ''.join(story_parts)
         
         return {
-            "heading": heading,
-            "story": story,
-            "dateline": dateline,
-            "timestamp": format_timestamp(),
+            "heading":      heading,
+            "sub_heading":  "",
+            "story":        story,
+            "dateline":     dateline,
+            "timestamp":    format_timestamp(),
             "sources_used": [a.get('source_name', 'Unknown') for a in source_articles],
-            "word_count": len(story.split()),
+            "word_count":   len(story.split()),
             "source_count": len(source_articles),
-            "topic": topic,
-            "keywords": trend.get('keywords', []),
+            "topic":        topic,
+            "keywords":     trend.get('keywords', []),
             "generated_at": datetime.utcnow().isoformat(),
-            "model_used": "fallback",
-            "is_fallback": True
+            "model_used":   "fallback",
+            "is_fallback":  True,
+            "generation_pipeline": "direct_llm",
         }
         
     except Exception as e:

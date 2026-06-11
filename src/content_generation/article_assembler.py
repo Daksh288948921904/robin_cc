@@ -196,6 +196,9 @@ def assemble_article(
 
     # Sanitise title: strip leading #, trim whitespace
     title = re.sub(r'^#+\s*', '', title).strip() or topic
+    # Strip outlet-name prefixes LLM sometimes generates ("X Reports on ...", "Report from X: ...")
+    title = re.sub(r'^[\w\s,\.]+?\s+[Rr]eports?\s+on\s+', '', title).strip() or topic
+    title = re.sub(r'^[Rr]eport\s+from\s+[\w\s]+?:\s*', '', title).strip() or topic
 
     # Always produce a subtitle — fall back to first sentence of lede if empty
     if not subtitle:
