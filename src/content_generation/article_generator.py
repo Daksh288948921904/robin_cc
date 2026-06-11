@@ -417,10 +417,22 @@ def _normalize_direct_article(direct: Dict, topic: str, source_articles: List[Di
     category = direct.get("category", "World")
     today    = datetime.utcnow().strftime("%B %d, %Y")
 
-    # Enforce: subtitle must differ from title
-    if not subtitle or subtitle.strip().lower() == title.strip().lower() or subtitle.strip().lower().startswith(title.strip().lower()):
-        first_sent = re.split(r'(?<=[.!?])\s', body.strip())
-        subtitle = first_sent[0][:180].strip() if first_sent and first_sent[0].strip() else f"{title} — key details and developments."
+    def _word_overlap(a: str, b: str) -> float:
+        a_w = set(re.sub(r'[^\w\s]', '', a.lower()).split())
+        b_w = set(re.sub(r'[^\w\s]', '', b.lower()).split())
+        return len(a_w & b_w) / len(a_w) if a_w else 0.0
+
+    # Enforce: subtitle must not be a near-duplicate of the title (>60% word overlap)
+    if not subtitle or _word_overlap(title, subtitle) > 0.6:
+        body_sents = re.split(r'(?<=[.!?])\s', body.strip())
+        subtitle = ""
+        for sent in body_sents:
+            sent = sent.strip()
+            if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
+                subtitle = sent[:180]
+                break
+        if not subtitle:
+            subtitle = f"Details continue to emerge as the story develops around {topic}."
 
     # Enforce: title must be shorter than subtitle
     if len(title) >= len(subtitle):

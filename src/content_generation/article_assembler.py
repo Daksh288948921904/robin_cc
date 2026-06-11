@@ -202,19 +202,39 @@ def assemble_article(
     title = re.sub(r'^[\w\s,\.]+?\s+[Rr]eports?\s+on\s+', '', title).strip() or topic
     title = re.sub(r'^[Rr]eport\s+from\s+[\w\s]+?:\s*', '', title).strip() or topic
 
+    def _word_overlap(a: str, b: str) -> float:
+        a_w = set(re.sub(r'[^\w\s]', '', a.lower()).split())
+        b_w = set(re.sub(r'[^\w\s]', '', b.lower()).split())
+        return len(a_w & b_w) / len(a_w) if a_w else 0.0
+
     # Always produce a subtitle — fall back to first sentence of lede if empty
     if not subtitle:
-        first_sentence = re.split(r'(?<=[.!?])\s', lede.strip())
-        subtitle = first_sentence[0][:180].strip() if first_sentence else topic
+        lede_sents = re.split(r'(?<=[.!?])\s', lede.strip())
+        subtitle = lede_sents[0][:180].strip() if lede_sents else topic
 
-    # Enforce: subtitle must differ from title (not just a duplicate or prefix)
-    if subtitle.strip().lower() == title.strip().lower() or subtitle.strip().lower().startswith(title.strip().lower()):
-        first_sentence = re.split(r'(?<=[.!?])\s', lede.strip())
-        subtitle = first_sentence[0][:180].strip() if first_sentence and first_sentence[0].strip().lower() != title.strip().lower() else f"{title} — latest developments and key details from the ground."
+    # Enforce: subtitle must not be a near-duplicate of the title (>60% word overlap)
+    if _word_overlap(title, subtitle) > 0.6:
+        # Try each sentence of the lede until one is dissimilar enough
+        lede_sents = re.split(r'(?<=[.!?])\s', lede.strip())
+        subtitle = ""
+        for sent in lede_sents:
+            sent = sent.strip()
+            if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
+                subtitle = sent[:180]
+                break
+        # Try first sentence of the body as last resort before generic fallback
+        if not subtitle:
+            body_sents = re.split(r'(?<=[.!?])\s', body.strip())
+            for sent in body_sents[1:4]:
+                sent = sent.strip()
+                if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
+                    subtitle = sent[:180]
+                    break
+        if not subtitle:
+            subtitle = f"Details continue to emerge as the story develops around {topic}."
 
     # Enforce: title must be shorter than subtitle
     if len(title) >= len(subtitle):
-        # Title is too long — truncate to first 7 words
         title_words = title.split()
         if len(title_words) > 7:
             title = " ".join(title_words[:7])

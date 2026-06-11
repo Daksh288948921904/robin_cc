@@ -138,7 +138,9 @@ Your TITLE must be an entirely original headline: new angle, stronger verb, or t
 ━━━ SUBTITLE RULE (CRITICAL — ENFORCED) ━━━
 The SUBTITLE must be a COMPLETE, DETAILED sentence of 120–180 characters.
 It must name at least one key actor AND one specific consequence or development.
-It must NOT repeat or lightly rephrase the title.
+It must NOT share more than 3 words with the title — it must take a DIFFERENT angle, add NEW information not in the title, and answer WHO did WHAT and with WHAT CONSEQUENCE.
+WRONG (too similar to title): Title is "Iran Targets Musk Firms in Gulf" → subtitle "Iran threatens Elon Musk's companies in the Middle East, Iranian state media declares." ← BANNED — same content, different words
+RIGHT: "Tehran's warning, issued through state-run IRNA, specifically names SpaceX Starlink and Tesla operations as potential targets amid escalating regional tensions."
 WRONG:  "Experts warn of impending monetary policy shift"  ← too short, too vague
 RIGHT:  "The Federal Reserve is expected to raise interest rates by 50 basis points next week as inflation data forces policymakers to act faster than markets anticipated."
 
