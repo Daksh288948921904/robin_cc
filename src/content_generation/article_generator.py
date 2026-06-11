@@ -462,8 +462,7 @@ def generate_article(
     audit = audit_source_material(source_articles, topic, client)
 
     if audit.source_quality == "thin":
-        logger.warning(f"⏭️  Skipping '{topic}' — audit quality=thin")
-        return None
+        logger.warning(f"⚠️  Thin sources for '{topic}' — proceeding with reduced targets")
 
     # Stage 4 — Flow planning
     flow = plan_article_flow(
@@ -476,7 +475,7 @@ def generate_article(
     logger.info(f"   Flow: {len(flow.sections)} sections, ~{flow.total_word_target}w")
 
     # Stage 5 — Section-by-section generation
-    lede, sections = generate_sections(flow, cluster_id, topic, client)
+    lede, sections = generate_sections(flow, cluster_id, topic, client, source_articles)
 
     if not sections:
         logger.warning("No sections generated — using fallback")

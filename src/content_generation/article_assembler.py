@@ -155,6 +155,8 @@ def assemble_article(
     if not sections and not lede.strip():
         logger.error("No sections and no lede — cannot assemble article")
         return None
+    # Filter out empty/very-short sections
+    sections = [s for s in sections if s and len(s.body.split()) >= 20]
 
     today_str = today or datetime.utcnow().strftime("%B %d, %Y")
     topic     = trend.get("topic", "News Update")
@@ -194,6 +196,11 @@ def assemble_article(
 
     # Sanitise title: strip leading #, trim whitespace
     title = re.sub(r'^#+\s*', '', title).strip() or topic
+
+    # Always produce a subtitle — fall back to first sentence of lede if empty
+    if not subtitle:
+        first_sentence = re.split(r'(?<=[.!?])\s', lede.strip())
+        subtitle = first_sentence[0][:180].strip() if first_sentence else topic
 
     # ── Build formatted article string (matches old parse_generated_article output) ──
     byline_line  = f"BYLINE: robin cc | {today_str}"

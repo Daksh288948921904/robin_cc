@@ -118,6 +118,7 @@ RULES:
 3. Only use aspects that appear in the provided inventory.
 4. The final section must advance the story — not summarise it.
 5. Do NOT add a "lede_aspects" key — the lede is always built from event_core.
+6. NEVER name a news outlet, publication, broadcaster, or website in any heading.
 
 Output format (strict):
 {

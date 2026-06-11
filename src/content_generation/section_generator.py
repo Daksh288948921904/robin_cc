@@ -163,6 +163,7 @@ def generate_sections(
     cluster_id: str,
     topic: str,
     groq_client,
+    source_articles: List[Dict] = None,
 ) -> Tuple[str, List[GeneratedSection]]:
     """
     Generate the lede and all body sections for a flow plan.
@@ -185,6 +186,14 @@ def generate_sections(
         aspects=flow.lede_aspects,
         top_k=3,
     )
+    if not lede_chunks and source_articles:
+        lede_chunks = [
+            {
+                "source_name": a.get("source_name", "Source"),
+                "chunk_text": (a.get("heading", "") + ". " + a.get("story", ""))[:500],
+            }
+            for a in source_articles[:2]
+        ]
     lede_quotes = collect_quotes_from_chunks(lede_chunks)
     lede_prompt = _build_lede_prompt(lede_chunks, lede_quotes, topic)
     lede_text = _call_groq(_SECTION_SYSTEM, lede_prompt, groq_client, max_tokens=150) or ""
@@ -201,6 +210,16 @@ def generate_sections(
         )
         if not chunks:
             chunks = get_chunks_by_aspect(cluster_id, section.aspects, top_k=5)
+
+        # Fallback: if Qdrant returned nothing, synthesise chunks from source articles
+        if not chunks and source_articles:
+            chunks = [
+                {
+                    "source_name": a.get("source_name", "Source"),
+                    "chunk_text": (a.get("heading", "") + ". " + a.get("story", ""))[:600],
+                }
+                for a in source_articles[:3]
+            ]
 
         quotes = collect_quotes_from_chunks(chunks)
         prompt = _build_section_prompt(section, chunks, quotes)
