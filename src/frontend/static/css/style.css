@@ -1294,6 +1294,7 @@ a{color:inherit;text-decoration:none}
   padding:2px 7px;border-radius:4px;
 }
 .sum-badge--rag{color:#10b981;background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.3);}
+.sum-badge--direct{color:#f59e0b;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3);}
 .sum-meta-sources{font-size:11px;color:var(--ink3)}
 
 /* ── Category button ── */

@@ -276,7 +276,7 @@ def _rag_article_to_summary(article: dict, source_articles: list) -> dict:
         'sources_list':        sources_list,
         'reporter':            f'{reporter_first} {reporter_last}',
         'generated_at':        article.get('generated_at', ''),
-        'generation_pipeline': 'aspect_rag_v1',
+        'generation_pipeline': article.get('generation_pipeline', 'aspect_rag_v1'),
         'story_type':          article.get('story_type', ''),
         'source_quality':      article.get('source_quality', ''),
     }

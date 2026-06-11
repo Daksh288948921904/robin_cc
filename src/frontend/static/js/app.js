@@ -731,7 +731,9 @@ function renderSummary(s, realIdx) {
 
   const pipelineBadge = s.generation_pipeline === 'aspect_rag_v1'
     ? `<span class="sum-badge sum-badge--rag">RAG Pipeline</span>`
-    : `<span class="sum-badge">DNL Briefing</span>`;
+    : s.generation_pipeline === 'direct_llm'
+      ? `<span class="sum-badge sum-badge--direct">Standard</span>`
+      : `<span class="sum-badge">DNL Briefing</span>`;
 
   $('summary-section').innerHTML = `
     <div class="summary-result">

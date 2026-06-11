@@ -462,7 +462,16 @@ def generate_article(
     audit = audit_source_material(source_articles, topic, client)
 
     if audit.source_quality == "thin":
-        logger.warning(f"⚠️  Thin sources for '{topic}' — proceeding with reduced targets")
+        logger.warning(f"⚠️  Thin sources for '{topic}' — falling back to direct LLM generation")
+        try:
+            from src.content_generation.multi_source_summary import generate_summary
+            direct = generate_summary(source_articles[0], source_articles[1:])
+            if direct:
+                direct['generation_pipeline'] = 'direct_llm'
+                direct['is_fallback'] = True
+                return direct
+        except Exception as _e:
+            logger.warning(f"Direct LLM fallback failed ({_e}), continuing with RAG")
 
     # Stage 4 — Flow planning
     flow = plan_article_flow(
