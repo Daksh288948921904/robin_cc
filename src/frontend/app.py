@@ -28,6 +28,25 @@ from starlette.middleware.sessions import SessionMiddleware
 from werkzeug.security import check_password_hash
 
 load_dotenv(PROJECT_ROOT / '.env')
+import requests as _requests
+
+_GN_URL = (os.environ.get('GLOBAL_NEWS_URL') or '').rstrip('/')
+_GN_KEY = os.environ.get('GLOBAL_NEWS_API_KEY', '')
+
+def _push_to_global_news(article: dict, feed_id: str = '') -> None:
+    if not _GN_URL or not _GN_KEY:
+        return
+    try:
+        article['hocalwire_id'] = feed_id
+        _requests.post(
+            f'{_GN_URL}/api/ingest',
+            json=article,
+            headers={'X-API-Key': _GN_KEY},
+            timeout=8,
+        )
+    except Exception as _e:
+        logger.warning('Global News push failed: %s', _e)
+
 
 app = FastAPI()
 
@@ -852,14 +871,24 @@ async def publish_to_hocalwire(request: Request, idx: int):
                     idx=idx, heading=title, sub_heading=subtitle,
                     hocalwire_id=feed_id, reporter=cached.get('reporter', ''),
                     category=cached.get('category', ''), image_url=image_url,
+                    story=body,
                 )
             except Exception as _se:
                 logger.warning("Supabase insert_published failed: %s", _se)
+            _push_to_global_news({
+                'heading':     title,
+                'sub_heading': subtitle,
+                'story':       body,
+                'image_url':   image_url,
+                'category':    cached.get('category', 'World'),
+                'location':    cached.get('location') or main_article.get('location', ''),
+                'reporter':    cached.get('reporter', ''),
+                'server_idx':  idx,
+            }, feed_id)
             return JSONResponse({
                 'status': 'success',
-                'message': 'Published to Hocalwire successfully.',
-                'feed_id': feed_id,
             })
+
         return JSONResponse({
             'status': 'error',
             'message': article_payload.get('upload_error', 'Hocalwire rejected the upload.'),
