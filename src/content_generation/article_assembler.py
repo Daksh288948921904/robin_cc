@@ -53,16 +53,16 @@ _PHRASE_SUBS = [
 _META_SYSTEM = """You are a headline writer at robin cc.
 Given an assembled article body, return ONLY valid JSON with these exact keys:
 {
-  "title":    "<original headline — 5-7 words, strong verb, specific — NOT copied from sources>",
-  "subtitle": "<complete sentence 120-180 chars naming key actor + specific consequence>",
+  "title":    "<original headline — 60-70 characters exactly, strong verb, specific — NOT copied from sources>",
+  "subtitle": "<complete sentence 140-160 characters exactly, naming key actor + specific consequence>",
   "location": "<most specific city or country dateline from the article — uppercase>",
   "category": "<exactly one of: World / Technology / Politics / Sports / Business / Entertainment / Science / Health / Environment / Crime / Society>"
 }
 Rules:
 - title must be original — do not repeat any headline from the sources.
-- title must be SHORTER than subtitle. Title: 5-7 words (max 60 chars). Subtitle: 120-180 chars.
-- subtitle must be a full sentence (subject + verb + consequence), 120-180 characters.
-- subtitle must NOT be the same as or a trivial restatement of the title.
+- title must be 60-70 characters (count carefully — expand with a second detail if too short, trim if too long).
+- subtitle must be a full sentence (subject + verb + consequence), exactly 140-160 characters.
+- subtitle must NOT be the same as or a trivial restatement of the title — different angle, new information.
 - No markdown, no preamble."""
 
 
@@ -210,30 +210,41 @@ def assemble_article(
     # Always produce a subtitle — fall back to first sentence of lede if empty
     if not subtitle:
         lede_sents = re.split(r'(?<=[.!?])\s', lede.strip())
-        subtitle = lede_sents[0][:180].strip() if lede_sents else topic
+        subtitle = lede_sents[0][:160].strip() if lede_sents else topic
 
     # Enforce: subtitle must not be a near-duplicate of the title (>60% word overlap)
     if _word_overlap(title, subtitle) > 0.6:
-        # Try each sentence of the lede until one is dissimilar enough
         lede_sents = re.split(r'(?<=[.!?])\s', lede.strip())
         subtitle = ""
         for sent in lede_sents:
             sent = sent.strip()
             if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
-                subtitle = sent[:180]
+                subtitle = sent[:160]
                 break
-        # Try first sentence of the body as last resort before generic fallback
         if not subtitle:
             body_sents = re.split(r'(?<=[.!?])\s', body.strip())
             for sent in body_sents[1:4]:
                 sent = sent.strip()
                 if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
-                    subtitle = sent[:180]
+                    subtitle = sent[:160]
                     break
         if not subtitle:
             subtitle = f"Details continue to emerge as the story develops around {topic}."
 
-    # Enforce: title must be shorter than subtitle
+    # Clamp subtitle to 140-160 chars: trim if over, pad with body content if under
+    subtitle = subtitle[:160].strip()
+    if len(subtitle) < 140:
+        body_sents = re.split(r'(?<=[.!?])\s', body.strip())
+        for sent in body_sents:
+            candidate = (subtitle.rstrip('.') + ". " + sent.strip())[:160].strip()
+            if len(candidate) >= 140:
+                subtitle = candidate
+                break
+
+    # Clamp title to 60-70 chars
+    if len(title) > 70:
+        title = title[:70].rsplit(' ', 1)[0]
+    # Title must always be shorter than subtitle
     if len(title) >= len(subtitle):
         title_words = title.split()
         if len(title_words) > 7:

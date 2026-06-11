@@ -429,12 +429,25 @@ def _normalize_direct_article(direct: Dict, topic: str, source_articles: List[Di
         for sent in body_sents:
             sent = sent.strip()
             if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
-                subtitle = sent[:180]
+                subtitle = sent[:160]
                 break
         if not subtitle:
             subtitle = f"Details continue to emerge as the story develops around {topic}."
 
-    # Enforce: title must be shorter than subtitle
+    # Clamp subtitle to 140-160 chars
+    subtitle = subtitle[:160].strip()
+    if len(subtitle) < 140:
+        body_sents = re.split(r'(?<=[.!?])\s', body.strip())
+        for sent in body_sents:
+            candidate = (subtitle.rstrip('.') + ". " + sent.strip())[:160].strip()
+            if len(candidate) >= 140:
+                subtitle = candidate
+                break
+
+    # Clamp title to 60-70 chars
+    if len(title) > 70:
+        title = title[:70].rsplit(' ', 1)[0]
+    # Title must always be shorter than subtitle
     if len(title) >= len(subtitle):
         title_words = title.split()
         if len(title_words) > 7:
