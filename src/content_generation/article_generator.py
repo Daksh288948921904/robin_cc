@@ -417,6 +417,17 @@ def _normalize_direct_article(direct: Dict, topic: str, source_articles: List[Di
     category = direct.get("category", "World")
     today    = datetime.utcnow().strftime("%B %d, %Y")
 
+    # Enforce: subtitle must differ from title
+    if not subtitle or subtitle.strip().lower() == title.strip().lower() or subtitle.strip().lower().startswith(title.strip().lower()):
+        first_sent = re.split(r'(?<=[.!?])\s', body.strip())
+        subtitle = first_sent[0][:180].strip() if first_sent and first_sent[0].strip() else f"{title} — key details and developments."
+
+    # Enforce: title must be shorter than subtitle
+    if len(title) >= len(subtitle):
+        title_words = title.split()
+        if len(title_words) > 7:
+            title = " ".join(title_words[:7])
+
     # Build formatted story matching the pipeline shape so _rag_article_to_summary extracts correctly
     formatted_story = (
         f"# {title}\n\n"

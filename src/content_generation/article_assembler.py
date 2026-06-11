@@ -60,7 +60,9 @@ Given an assembled article body, return ONLY valid JSON with these exact keys:
 }
 Rules:
 - title must be original — do not repeat any headline from the sources.
+- title must be SHORTER than subtitle. Title: 5-7 words (max 60 chars). Subtitle: 120-180 chars.
 - subtitle must be a full sentence (subject + verb + consequence), 120-180 characters.
+- subtitle must NOT be the same as or a trivial restatement of the title.
 - No markdown, no preamble."""
 
 
@@ -204,6 +206,18 @@ def assemble_article(
     if not subtitle:
         first_sentence = re.split(r'(?<=[.!?])\s', lede.strip())
         subtitle = first_sentence[0][:180].strip() if first_sentence else topic
+
+    # Enforce: subtitle must differ from title (not just a duplicate or prefix)
+    if subtitle.strip().lower() == title.strip().lower() or subtitle.strip().lower().startswith(title.strip().lower()):
+        first_sentence = re.split(r'(?<=[.!?])\s', lede.strip())
+        subtitle = first_sentence[0][:180].strip() if first_sentence and first_sentence[0].strip().lower() != title.strip().lower() else f"{title} — latest developments and key details from the ground."
+
+    # Enforce: title must be shorter than subtitle
+    if len(title) >= len(subtitle):
+        # Title is too long — truncate to first 7 words
+        title_words = title.split()
+        if len(title_words) > 7:
+            title = " ".join(title_words[:7])
 
     # ── Build formatted article string (matches old parse_generated_article output) ──
     byline_line  = f"BYLINE: robin cc | {today_str}"
