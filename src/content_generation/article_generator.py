@@ -417,10 +417,28 @@ def _normalize_direct_article(direct: Dict, topic: str, source_articles: List[Di
     category = direct.get("category", "World")
     today    = datetime.utcnow().strftime("%B %d, %Y")
 
+    source_headlines = [a.get("heading", "") for a in source_articles if a.get("heading")]
+
     def _word_overlap(a: str, b: str) -> float:
         a_w = set(re.sub(r'[^\w\s]', '', a.lower()).split())
         b_w = set(re.sub(r'[^\w\s]', '', b.lower()).split())
         return len(a_w & b_w) / len(a_w) if a_w else 0.0
+
+    # Reject title if it copied a source headline (>50% word overlap)
+    if any(_word_overlap(title, h) > 0.5 for h in source_headlines if h):
+        body_sents = re.split(r'(?<=[.!?])\s', body.strip())
+        title = topic
+        for sent in body_sents[:6]:
+            sent = sent.strip()
+            if not sent:
+                continue
+            if all(_word_overlap(sent, h) <= 0.5 for h in source_headlines if h):
+                title = " ".join(sent.split()[:8])
+                break
+
+    # Clamp title to 60-70 chars at a word boundary
+    if len(title) > 70:
+        title = title[:70].rsplit(' ', 1)[0].rstrip(',;:')
 
     # Enforce: subtitle must not be a near-duplicate of the title (>60% word overlap)
     if not subtitle or _word_overlap(title, subtitle) > 0.6:
@@ -439,19 +457,19 @@ def _normalize_direct_article(direct: Dict, topic: str, source_articles: List[Di
     if len(subtitle) < 140:
         body_sents = re.split(r'(?<=[.!?])\s', body.strip())
         for sent in body_sents:
-            candidate = (subtitle.rstrip('.') + ". " + sent.strip())[:160].strip()
+            sent = sent.strip()
+            if _word_overlap(subtitle, sent) > 0.5:
+                continue
+            candidate = (subtitle.rstrip('.') + ". " + sent)[:160].strip()
             if len(candidate) >= 140:
                 subtitle = candidate
                 break
 
-    # Clamp title to 60-70 chars
-    if len(title) > 70:
-        title = title[:70].rsplit(' ', 1)[0]
     # Title must always be shorter than subtitle
     if len(title) >= len(subtitle):
         title_words = title.split()
-        if len(title_words) > 7:
-            title = " ".join(title_words[:7])
+        if len(title_words) > 6:
+            title = " ".join(title_words[:6])
 
     # Build formatted story matching the pipeline shape so _rag_article_to_summary extracts correctly
     formatted_story = (

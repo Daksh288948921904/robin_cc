@@ -207,6 +207,25 @@ def assemble_article(
         b_w = set(re.sub(r'[^\w\s]', '', b.lower()).split())
         return len(a_w & b_w) / len(a_w) if a_w else 0.0
 
+    # Reject title if LLM copied a source headline (>50% overlap with any banned headline)
+    if any(_word_overlap(title, h) > 0.5 for h in source_headlines if h):
+        # Derive a fresh title from the body: first short-enough sentence not in sources
+        body_sents = re.split(r'(?<=[.!?])\s', body.strip())
+        title = topic  # fallback
+        for sent in body_sents[:6]:
+            sent = sent.strip()
+            if not sent:
+                continue
+            if all(_word_overlap(sent, h) <= 0.5 for h in source_headlines if h):
+                # Take first 8 words as a headline
+                words = sent.split()
+                title = " ".join(words[:8])
+                break
+
+    # Clamp title to 60-70 chars at a word boundary
+    if len(title) > 70:
+        title = title[:70].rsplit(' ', 1)[0].rstrip(',;:')
+
     # Always produce a subtitle — fall back to first sentence of lede if empty
     if not subtitle:
         lede_sents = re.split(r'(?<=[.!?])\s', lede.strip())
@@ -231,24 +250,25 @@ def assemble_article(
         if not subtitle:
             subtitle = f"Details continue to emerge as the story develops around {topic}."
 
-    # Clamp subtitle to 140-160 chars: trim if over, pad with body content if under
+    # Clamp subtitle: trim to 160, then pad to 140 if short
     subtitle = subtitle[:160].strip()
     if len(subtitle) < 140:
         body_sents = re.split(r'(?<=[.!?])\s', body.strip())
         for sent in body_sents:
-            candidate = (subtitle.rstrip('.') + ". " + sent.strip())[:160].strip()
+            sent = sent.strip()
+            # skip sentences that are near-duplicates of the existing subtitle
+            if _word_overlap(subtitle, sent) > 0.5:
+                continue
+            candidate = (subtitle.rstrip('.') + ". " + sent)[:160].strip()
             if len(candidate) >= 140:
                 subtitle = candidate
                 break
 
-    # Clamp title to 60-70 chars
-    if len(title) > 70:
-        title = title[:70].rsplit(' ', 1)[0]
     # Title must always be shorter than subtitle
     if len(title) >= len(subtitle):
         title_words = title.split()
-        if len(title_words) > 7:
-            title = " ".join(title_words[:7])
+        if len(title_words) > 6:
+            title = " ".join(title_words[:6])
 
     # ── Build formatted article string (matches old parse_generated_article output) ──
     byline_line  = f"BYLINE: robin cc | {today_str}"
