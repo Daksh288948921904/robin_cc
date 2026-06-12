@@ -433,12 +433,19 @@ def _normalize_direct_article(direct: Dict, topic: str, source_articles: List[Di
             if not sent:
                 continue
             if all(_word_overlap(sent, h) <= 0.5 for h in source_headlines if h):
-                title = " ".join(sent.split()[:8])
+                words = sent.split()
+                candidate = ""
+                for w in words:
+                    test = (candidate + " " + w).strip()
+                    if len(test) > 75:
+                        break
+                    candidate = test
+                title = candidate or " ".join(words[:7])
                 break
 
-    # Clamp title to 60-70 chars at a word boundary
-    if len(title) > 70:
-        title = title[:70].rsplit(' ', 1)[0].rstrip(',;:')
+    # Clamp title to 80 chars at a word boundary
+    if len(title) > 80:
+        title = title[:80].rsplit(' ', 1)[0].rstrip(',;:')
 
     # Enforce: subtitle must not be a near-duplicate of the title (>60% word overlap)
     if not subtitle or _word_overlap(title, subtitle) > 0.6:
@@ -447,21 +454,21 @@ def _normalize_direct_article(direct: Dict, topic: str, source_articles: List[Di
         for sent in body_sents:
             sent = sent.strip()
             if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
-                subtitle = sent[:160]
+                subtitle = sent[:180]
                 break
         if not subtitle:
             subtitle = f"Details continue to emerge as the story develops around {topic}."
 
-    # Clamp subtitle to 140-160 chars
-    subtitle = subtitle[:160].strip()
-    if len(subtitle) < 140:
+    # Clamp subtitle to 160-180 chars
+    subtitle = subtitle[:180].strip()
+    if len(subtitle) < 160:
         body_sents = re.split(r'(?<=[.!?])\s', body.strip())
         for sent in body_sents:
             sent = sent.strip()
             if _word_overlap(subtitle, sent) > 0.5:
                 continue
-            candidate = (subtitle.rstrip('.') + ". " + sent)[:160].strip()
-            if len(candidate) >= 140:
+            candidate = (subtitle.rstrip('.') + ". " + sent)[:180].strip()
+            if len(candidate) >= 160:
                 subtitle = candidate
                 break
 

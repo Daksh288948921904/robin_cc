@@ -53,15 +53,15 @@ _PHRASE_SUBS = [
 _META_SYSTEM = """You are a headline writer at robin cc.
 Given an assembled article body, return ONLY valid JSON with these exact keys:
 {
-  "title":    "<original headline — 60-70 characters exactly, strong verb, specific — NOT copied from sources>",
-  "subtitle": "<complete sentence 140-160 characters exactly, naming key actor + specific consequence>",
+  "title":    "<original headline — 70-80 characters exactly, strong verb, specific — NOT copied from sources>",
+  "subtitle": "<complete sentence 160-180 characters exactly, naming key actor + specific consequence>",
   "location": "<most specific city or country dateline from the article — uppercase>",
   "category": "<exactly one of: World / Technology / Politics / Sports / Business / Entertainment / Science / Health / Environment / Crime / Society>"
 }
 Rules:
 - title must be original — do not repeat any headline from the sources.
-- title must be 60-70 characters (count carefully — expand with a second detail if too short, trim if too long).
-- subtitle must be a full sentence (subject + verb + consequence), exactly 140-160 characters.
+- title must be 70-80 characters (count carefully — expand with a second detail if too short, trim if too long).
+- subtitle must be a full sentence (subject + verb + consequence), exactly 160-180 characters.
 - subtitle must NOT be the same as or a trivial restatement of the title — different angle, new information.
 - No markdown, no preamble."""
 
@@ -209,7 +209,7 @@ def assemble_article(
 
     # Reject title if LLM copied a source headline (>50% overlap with any banned headline)
     if any(_word_overlap(title, h) > 0.5 for h in source_headlines if h):
-        # Derive a fresh title from the body: first short-enough sentence not in sources
+        # Derive a fresh title from the body: fill up to 75 chars from a sentence not in sources
         body_sents = re.split(r'(?<=[.!?])\s', body.strip())
         title = topic  # fallback
         for sent in body_sents[:6]:
@@ -217,19 +217,24 @@ def assemble_article(
             if not sent:
                 continue
             if all(_word_overlap(sent, h) <= 0.5 for h in source_headlines if h):
-                # Take first 8 words as a headline
                 words = sent.split()
-                title = " ".join(words[:8])
+                candidate = ""
+                for w in words:
+                    test = (candidate + " " + w).strip()
+                    if len(test) > 75:
+                        break
+                    candidate = test
+                title = candidate or " ".join(words[:7])
                 break
 
-    # Clamp title to 60-70 chars at a word boundary
-    if len(title) > 70:
-        title = title[:70].rsplit(' ', 1)[0].rstrip(',;:')
+    # Clamp title to 80 chars at a word boundary
+    if len(title) > 80:
+        title = title[:80].rsplit(' ', 1)[0].rstrip(',;:')
 
     # Always produce a subtitle — fall back to first sentence of lede if empty
     if not subtitle:
         lede_sents = re.split(r'(?<=[.!?])\s', lede.strip())
-        subtitle = lede_sents[0][:160].strip() if lede_sents else topic
+        subtitle = lede_sents[0][:180].strip() if lede_sents else topic
 
     # Enforce: subtitle must not be a near-duplicate of the title (>60% word overlap)
     if _word_overlap(title, subtitle) > 0.6:
@@ -238,29 +243,29 @@ def assemble_article(
         for sent in lede_sents:
             sent = sent.strip()
             if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
-                subtitle = sent[:160]
+                subtitle = sent[:180]
                 break
         if not subtitle:
             body_sents = re.split(r'(?<=[.!?])\s', body.strip())
             for sent in body_sents[1:4]:
                 sent = sent.strip()
                 if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
-                    subtitle = sent[:160]
+                    subtitle = sent[:180]
                     break
         if not subtitle:
             subtitle = f"Details continue to emerge as the story develops around {topic}."
 
-    # Clamp subtitle: trim to 160, then pad to 140 if short
-    subtitle = subtitle[:160].strip()
-    if len(subtitle) < 140:
+    # Clamp subtitle: trim to 180, then pad to 160 if short
+    subtitle = subtitle[:180].strip()
+    if len(subtitle) < 160:
         body_sents = re.split(r'(?<=[.!?])\s', body.strip())
         for sent in body_sents:
             sent = sent.strip()
             # skip sentences that are near-duplicates of the existing subtitle
             if _word_overlap(subtitle, sent) > 0.5:
                 continue
-            candidate = (subtitle.rstrip('.') + ". " + sent)[:160].strip()
-            if len(candidate) >= 140:
+            candidate = (subtitle.rstrip('.') + ". " + sent)[:180].strip()
+            if len(candidate) >= 160:
                 subtitle = candidate
                 break
 

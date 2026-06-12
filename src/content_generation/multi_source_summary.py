@@ -136,18 +136,18 @@ These source headlines are BANNED — do not copy, paraphrase, or lightly rephra
 Your TITLE must be an entirely original headline: new angle, stronger verb, or the single most important CONSEQUENCE of the story that the source headlines missed. Ask yourself: what changes because of this story? Start there.
 
 ━━━ SUBTITLE RULE (CRITICAL — ENFORCED) ━━━
-The SUBTITLE must be a COMPLETE, DETAILED sentence of exactly 140–160 characters (count carefully).
+The SUBTITLE must be a COMPLETE, DETAILED sentence of exactly 160–180 characters (count carefully).
 It must name at least one key actor AND one specific consequence or development.
 It must NOT share more than 3 words with the title — it must take a DIFFERENT angle, add NEW information not in the title, and answer WHO did WHAT and with WHAT CONSEQUENCE.
 WRONG (too similar to title): Title is "Iran Targets Musk Firms in Gulf" → subtitle "Iran threatens Elon Musk's companies in the Middle East, Iranian state media declares." ← BANNED — same content, different words
-RIGHT: "Tehran's warning, issued through state-run IRNA, specifically names SpaceX Starlink and Tesla operations as potential targets amid escalating regional tensions."
-WRONG (too short): "Experts warn of impending monetary policy shift" ← under 140 chars
-RIGHT: "The Federal Reserve is expected to raise interest rates by 50 basis points next week as inflation data forces policymakers to act faster than markets anticipated."
+RIGHT: "Tehran's warning, issued through state-run IRNA, specifically names SpaceX Starlink and Tesla operations as potential targets amid escalating regional tensions in the Gulf region."
+WRONG (too short): "Experts warn of impending monetary policy shift" ← under 160 chars
+RIGHT: "The Federal Reserve is expected to raise interest rates by 50 basis points next week as inflation data forces policymakers to act faster than markets anticipated, pressuring global bond markets."
 
 ━━━ OUTPUT FORMAT (follow exactly — do not add or remove any field) ━━━
 
-TITLE: <your ORIGINAL headline — 60-70 characters exactly, must differ from every banned headline above>
-SUBTITLE: <COMPLETE sentence, exactly 140–160 characters, names key actor + specific consequence — see SUBTITLE RULE above>
+TITLE: <your ORIGINAL headline — 70-80 characters exactly, must differ from every banned headline above>
+SUBTITLE: <COMPLETE sentence, exactly 160–180 characters, names key actor + specific consequence — see SUBTITLE RULE above>
 BYLINE: robin cc | {today}
 LOCATION: <most specific city or country dateline you can derive from the content>
 CATEGORY: <single best-fit label — World / Technology / Politics / Sports / Business / Entertainment / Science / Health / Environment / Crime / Society / Comedy>
