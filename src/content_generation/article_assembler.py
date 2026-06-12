@@ -255,16 +255,27 @@ def assemble_article(
         if not subtitle:
             subtitle = f"Details continue to emerge as the story develops around {topic}."
 
-    # Clamp subtitle: trim to 180, then pad to 160 if short
-    subtitle = subtitle[:180].strip()
+    # Clamp subtitle: cut at last sentence boundary ≤ 180 chars, then pad to 160 if short
+    def _clamp_subtitle(text: str) -> str:
+        text = text.strip()
+        if len(text) <= 180:
+            return text
+        # Find last sentence-ending punctuation within 180 chars
+        window = text[:180]
+        last_end = max(window.rfind('.'), window.rfind('!'), window.rfind('?'))
+        if last_end > 60:
+            return text[:last_end + 1].strip()
+        # No sentence boundary — cut at word boundary
+        return text[:180].rsplit(' ', 1)[0].rstrip(',;:')
+
+    subtitle = _clamp_subtitle(subtitle)
     if len(subtitle) < 160:
         body_sents = re.split(r'(?<=[.!?])\s', body.strip())
         for sent in body_sents:
             sent = sent.strip()
-            # skip sentences that are near-duplicates of the existing subtitle
             if _word_overlap(subtitle, sent) > 0.5:
                 continue
-            candidate = (subtitle.rstrip('.') + ". " + sent)[:180].strip()
+            candidate = _clamp_subtitle(subtitle.rstrip('.') + ". " + sent)
             if len(candidate) >= 160:
                 subtitle = candidate
                 break
