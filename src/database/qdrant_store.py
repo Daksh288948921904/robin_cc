@@ -312,6 +312,58 @@ def get_chunks_by_aspect(
         return []
 
 
+def semantic_search_cluster(
+    query_text: str,
+    cluster_id: str,
+    top_k: int = 8,
+) -> List[Dict]:
+    """
+    Semantic vector search across ALL aspects of a cluster.
+    Used by the chatbot to find relevant chunks regardless of aspect.
+    Falls back to a keyword scroll if embedding fails.
+    """
+    client = _get_client()
+    if client is None:
+        return []
+
+    query_vec = _embed(query_text)
+    if query_vec is None:
+        # Fallback: return top chunks by confidence for this cluster
+        try:
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            results = client.scroll(
+                collection_name=COLLECTION_NAME,
+                scroll_filter=Filter(must=[
+                    FieldCondition(key="cluster_id", match=MatchValue(value=cluster_id)),
+                ]),
+                limit=top_k,
+                with_payload=True,
+                with_vectors=False,
+            )[0]
+            return [p.payload for p in results]
+        except Exception as e:
+            logger.error(f"semantic_search_cluster fallback failed: {e}")
+            return []
+
+    try:
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+        response = client.query_points(
+            collection_name=COLLECTION_NAME,
+            query=query_vec,
+            query_filter=Filter(must=[
+                FieldCondition(key="cluster_id", match=MatchValue(value=cluster_id)),
+            ]),
+            limit=top_k,
+            with_payload=True,
+        )
+        return [r.payload for r in response.points]
+
+    except Exception as e:
+        logger.error(f"semantic_search_cluster failed: {e}")
+        return []
+
+
 def semantic_search(
     query_text: str,
     cluster_id: str,
