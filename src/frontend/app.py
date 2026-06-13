@@ -1310,6 +1310,37 @@ async def get_article_status(request: Request, idx: int):
     })
 
 
+@app.post('/api/articles/{idx}/lead-story')
+async def set_lead_story(request: Request, idx: int):
+    if not _GN_URL or not _GN_KEY:
+        return JSONResponse({'status': 'error', 'message': 'Global News not configured'}, status_code=400)
+    try:
+        body_json = await request.json()
+    except Exception:
+        body_json = {}
+    clear = body_json.get('clear', False)
+    article = SCRAPED_ARTICLES[idx] if 0 <= idx < len(SCRAPED_ARTICLES) else {}
+    cached  = SUMMARIES.get(str(idx), {})
+    heading = cached.get('title') or article.get('heading', '')
+    try:
+        payload = {'server_idx': None, 'heading': None} if clear else {'server_idx': idx, 'heading': heading}
+        r = _requests.post(
+            f'{_GN_URL}/api/lead-story',
+            json=payload,
+            headers={'X-API-Key': _GN_KEY},
+            timeout=8,
+        )
+        if r.ok:
+            return JSONResponse({'status': 'success', 'active': not clear})
+        return JSONResponse(
+            {'status': 'error', 'message': f'Global News returned {r.status_code}: {r.text[:120]}'},
+            status_code=502,
+        )
+    except Exception as e:
+        logger.warning('Global News lead-story failed: %s', e)
+        return JSONResponse({'status': 'error', 'message': str(e)}, status_code=502)
+
+
 @app.post('/api/articles/{idx}/chat')
 async def article_chat(request: Request, idx: int):
     if idx < 0 or idx >= len(SCRAPED_ARTICLES):

@@ -2614,6 +2614,31 @@ body::before {
   transform:translateY(-1px);
 }
 .podcast-btn:active{transform:translateY(0)}
+.lead-story-btn{
+  display:flex;align-items:center;gap:6px;
+  background:linear-gradient(135deg,rgba(234,179,8,.15),rgba(245,158,11,.1));
+  border:1px solid rgba(234,179,8,.35);
+  border-radius:8px;color:#fbbf24;
+  font-size:12px;font-weight:600;font-family:inherit;
+  padding:8px 14px;cursor:pointer;
+  transition:all .18s;
+}
+.lead-story-btn:hover{
+  background:linear-gradient(135deg,rgba(234,179,8,.28),rgba(245,158,11,.2));
+  border-color:rgba(234,179,8,.65);
+  color:#fff;
+  box-shadow:0 4px 18px rgba(234,179,8,.25);
+  transform:translateY(-1px);
+}
+.lead-story-btn:active{transform:translateY(0)}
+.lead-story-btn.active{
+  background:linear-gradient(135deg,rgba(234,179,8,.45),rgba(245,158,11,.35));
+  border-color:rgba(234,179,8,.9);
+  color:#fff;
+  box-shadow:0 0 0 2px rgba(234,179,8,.3);
+}
+.lead-story-btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.lead-story-spinner{width:10px;height:10px;border:2px solid rgba(251,191,36,.35);border-top-color:#fbbf24;border-radius:50%;animation:spin .7s linear infinite}
 .sp-tv-workflow-btn{
   display:inline-flex;align-items:center;gap:4px;
   background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);

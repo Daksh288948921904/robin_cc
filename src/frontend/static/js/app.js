@@ -22,6 +22,7 @@ let ACTIVITY_MAP     = {};    // realIdx → {published_hocalwire, video_sent, h
 let FEED_VISIBLE     = true;  // false when activity view is shown
 let SELECTED_IMAGE   = null;  // URL chosen in the image picker (null = use article default)
 let _hocalwirePreviewData = null; // stashed between preview fetch and confirm
+let LEAD_STORY_IDX   = null;  // server_idx of article currently set as lead story on Global News
 
 // ── DOM ──────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -463,6 +464,14 @@ function openReader(i) {
   $('social-instagram-section').innerHTML = '';
   const pb = $('publish-btn');
   if (pb) { pb.style.display = 'none'; pb.disabled = false; $('publish-label').textContent = 'Publish to Hocalwire'; $('publish-spinner').classList.add('hidden'); }
+
+  const lsBtn = $('lead-story-btn');
+  if (lsBtn) {
+    lsBtn.disabled = false;
+    lsBtn.classList.remove('active');
+    $('lead-story-label').textContent = 'Lead Story';
+    $('lead-story-spinner').classList.add('hidden');
+  }
 
   readerScroll.scrollTop = 0;
   readerProg.style.width = '0%';
@@ -1060,6 +1069,45 @@ async function confirmPublishToHocalwire() {
     confirmLabel.textContent = 'Confirm & Publish';
     confirmSpinner.classList.add('hidden');
     toast('err', `Publish error: ${e.message}`);
+  }
+}
+
+// ── Lead Story toggle ─────────────────────────────────────────
+async function toggleLeadStory() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) { toast('err', 'No article selected'); return; }
+
+  const btn     = $('lead-story-btn');
+  const label   = $('lead-story-label');
+  const spinner = $('lead-story-spinner');
+  const isActive = LEAD_STORY_IDX === realIdx;
+
+  btn.disabled = true;
+  label.textContent = isActive ? 'Removing…' : 'Setting…';
+  spinner.classList.remove('hidden');
+
+  try {
+    const res  = await fetch(`/api/articles/${realIdx}/lead-story`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify(isActive ? {clear: true} : {}),
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      LEAD_STORY_IDX = isActive ? null : realIdx;
+      btn.classList.toggle('active', !isActive);
+      label.textContent = isActive ? 'Lead Story' : 'Lead Story ✓';
+      toast('ok', isActive ? 'Lead story removed from Global News' : 'Set as lead story on Global News!');
+    } else {
+      label.textContent = isActive ? 'Lead Story ✓' : 'Lead Story';
+      toast('err', data.message || 'Failed to update lead story');
+    }
+  } catch(e) {
+    label.textContent = isActive ? 'Lead Story ✓' : 'Lead Story';
+    toast('err', `Lead story error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    spinner.classList.add('hidden');
   }
 }
 
