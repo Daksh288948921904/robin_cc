@@ -34,19 +34,23 @@ import requests as _requests
 _GN_URL = (os.environ.get('GLOBAL_NEWS_URL') or '').rstrip('/')
 _GN_KEY = os.environ.get('GLOBAL_NEWS_API_KEY', '')
 
-def _push_to_global_news(article: dict, feed_id: str = '') -> None:
+def _push_to_global_news(article: dict, feed_id: str = '') -> str:
+    """Push article to Global News and return the GN UUID (empty string on failure)."""
     if not _GN_URL or not _GN_KEY:
-        return
+        return ''
     try:
         article['hocalwire_id'] = feed_id
-        _requests.post(
+        r = _requests.post(
             f'{_GN_URL}/api/ingest',
             json=article,
             headers={'X-API-Key': _GN_KEY},
             timeout=8,
         )
+        if r.ok:
+            return r.json().get('id', '')
     except Exception as _e:
         logger.warning('Global News push failed: %s', _e)
+    return ''
 
 
 def _auto_load_articles():
@@ -945,7 +949,7 @@ async def publish_to_hocalwire(request: Request, idx: int):
                 )
             except Exception as _se:
                 logger.warning("Supabase insert_published failed: %s", _se)
-            _push_to_global_news({
+            gn_id = _push_to_global_news({
                 'heading':     title,
                 'sub_heading': subtitle,
                 'story':       body,
@@ -955,6 +959,10 @@ async def publish_to_hocalwire(request: Request, idx: int):
                 'reporter':    cached.get('reporter', ''),
                 'server_idx':  idx,
             }, feed_id)
+            if gn_id:
+                main_article['global_news_id']      = gn_id
+                main_article['global_news_heading']  = title
+                _persist_articles()
             return JSONResponse({
                 'status': 'success',
             })
@@ -1321,9 +1329,13 @@ async def set_lead_story(request: Request, idx: int):
     clear = body_json.get('clear', False)
     article = SCRAPED_ARTICLES[idx] if 0 <= idx < len(SCRAPED_ARTICLES) else {}
     cached  = SUMMARIES.get(str(idx), {})
-    heading = cached.get('title') or article.get('heading', '')
+    gn_id   = article.get('global_news_id', '')
+    heading = article.get('global_news_heading') or cached.get('title') or article.get('heading', '')
     try:
-        payload = {'server_idx': None, 'heading': None} if clear else {'server_idx': idx, 'heading': heading}
+        if clear:
+            payload = {'server_idx': None, 'heading': None, 'global_news_id': None}
+        else:
+            payload = {'server_idx': idx, 'heading': heading, 'global_news_id': gn_id or None}
         r = _requests.post(
             f'{_GN_URL}/api/lead-story',
             json=payload,
