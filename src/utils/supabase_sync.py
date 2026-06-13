@@ -113,7 +113,7 @@ def load_articles():
 # ── Published articles ────────────────────────────────────────────────────────
 
 def insert_published(idx, heading, sub_heading, hocalwire_id='',
-                     reporter='', category='', image_url='', body_html='', story=''):
+                     reporter='', category='', image_url='', body_html='', story='', country=''):
     if not _init():
         return
     try:
@@ -127,6 +127,7 @@ def insert_published(idx, heading, sub_heading, hocalwire_id='',
             'image_url':    image_url,
             'body_html':    body_html,
             'story':        story,
+            'country':      country,
             'published_at': _now(),
         }
         r = requests.post(_url('published_articles'), json=payload, headers=_headers, timeout=10)

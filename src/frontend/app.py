@@ -940,12 +940,21 @@ async def publish_to_hocalwire(request: Request, idx: int):
             main_article['uploaded_at']       = article_payload.get('uploaded_at', '')
             _record_activity(key, main_article, published_hocalwire=True)
             try:
+                from src.utils.country_resolver import resolve_country as _resolve_country
+                _country = (
+                    _resolve_country({'heading': f"{title} {subtitle}"})
+                    or main_article.get('region', '')
+                    or main_article.get('country', '')
+                )
+            except Exception:
+                _country = ''
+            try:
                 from src.utils.supabase_sync import insert_published as _sb_pub
                 _sb_pub(
                     idx=idx, heading=title, sub_heading=subtitle,
                     hocalwire_id=feed_id, reporter=cached.get('reporter', ''),
                     category=cached.get('category', ''), image_url=image_url,
-                    story=body,
+                    story=body, country=_country,
                 )
             except Exception as _se:
                 logger.warning("Supabase insert_published failed: %s", _se)
@@ -958,6 +967,7 @@ async def publish_to_hocalwire(request: Request, idx: int):
                 'location':    cached.get('location') or main_article.get('location', ''),
                 'reporter':    cached.get('reporter', ''),
                 'server_idx':  idx,
+                'country':     _country,
             }, feed_id)
             if gn_id:
                 main_article['global_news_id']      = gn_id
