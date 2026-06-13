@@ -465,10 +465,10 @@ function openReader(i) {
   const pb = $('publish-btn');
   if (pb) { pb.style.display = 'none'; pb.disabled = false; $('publish-label').textContent = 'Publish to Hocalwire'; $('publish-spinner').classList.add('hidden'); }
 
-  const lsBtn = $('lead-story-btn');
-  if (lsBtn) {
-    lsBtn.disabled = false;
-    lsBtn.classList.remove('active');
+  const lstTrack = $('lst-track');
+  if (lstTrack) {
+    lstTrack.classList.remove('on');
+    $('lead-story-toggle').classList.remove('disabled');
     $('lead-story-label').textContent = 'Lead Story';
     $('lead-story-spinner').classList.add('hidden');
   }
@@ -1077,12 +1077,13 @@ async function toggleLeadStory() {
   const realIdx = CURRENT_REAL_IDX;
   if (realIdx < 0) { toast('err', 'No article selected'); return; }
 
-  const btn     = $('lead-story-btn');
+  const toggle  = $('lead-story-toggle');
+  const track   = $('lst-track');
   const label   = $('lead-story-label');
   const spinner = $('lead-story-spinner');
   const isActive = LEAD_STORY_IDX === realIdx;
 
-  btn.disabled = true;
+  toggle.classList.add('disabled');
   label.textContent = isActive ? 'Removing…' : 'Setting…';
   spinner.classList.remove('hidden');
 
@@ -1095,18 +1096,18 @@ async function toggleLeadStory() {
     const data = await res.json();
     if (data.status === 'success') {
       LEAD_STORY_IDX = isActive ? null : realIdx;
-      btn.classList.toggle('active', !isActive);
-      label.textContent = isActive ? 'Lead Story' : 'Lead Story ✓';
+      track.classList.toggle('on', !isActive);
+      label.textContent = 'Lead Story';
       toast('ok', isActive ? 'Lead story removed from Global News' : 'Set as lead story on Global News!');
     } else {
-      label.textContent = isActive ? 'Lead Story ✓' : 'Lead Story';
       toast('err', data.message || 'Failed to update lead story');
+      label.textContent = 'Lead Story';
     }
   } catch(e) {
-    label.textContent = isActive ? 'Lead Story ✓' : 'Lead Story';
     toast('err', `Lead story error: ${e.message}`);
+    label.textContent = 'Lead Story';
   } finally {
-    btn.disabled = false;
+    toggle.classList.remove('disabled');
     spinner.classList.add('hidden');
   }
 }
