@@ -53,16 +53,16 @@ _PHRASE_SUBS = [
 _META_SYSTEM = """You are a headline writer at robin cc.
 Given an assembled article body, return ONLY valid JSON with these exact keys:
 {
-  "title":    "<original headline, strong verb, specific — NOT copied from sources>",
-  "subtitle": "<complete sentence naming key actor + specific consequence — different angle from title>",
+  "title":    "<original headline — 70-80 characters exactly, strong verb, specific — NOT copied from sources>",
+  "subtitle": "<complete sentence 160-180 characters exactly, naming key actor + specific consequence>",
   "location": "<most specific city or country dateline from the article — uppercase>",
   "category": "<exactly one of: World / Technology / Politics / Sports / Business / Entertainment / Science / Health / Environment / Crime / Society>"
 }
 Rules:
 - title must be original — do not repeat any headline from the sources.
-- title must be a complete, self-contained headline — strong verb, specific, no trailing punctuation.
-- subtitle must be a full sentence (subject + verb + consequence) — different angle from title, new information.
-- subtitle must NOT be the same as or a trivial restatement of the title.
+- title must be 70-80 characters (count carefully — expand with a second detail if too short, trim if too long).
+- subtitle must be a full sentence (subject + verb + consequence), exactly 160-180 characters.
+- subtitle must NOT be the same as or a trivial restatement of the title — different angle, new information.
 - No markdown, no preamble."""
 
 
@@ -227,10 +227,14 @@ def assemble_article(
                 title = candidate or " ".join(words[:7])
                 break
 
+    # Clamp title to 80 chars at a word boundary
+    if len(title) > 80:
+        title = title[:80].rsplit(' ', 1)[0].rstrip(',;:')
+
     # Always produce a subtitle — fall back to first sentence of lede if empty
     if not subtitle:
         lede_sents = re.split(r'(?<=[.!?])\s', lede.strip())
-        subtitle = lede_sents[0].strip() if lede_sents else topic
+        subtitle = lede_sents[0][:180].strip() if lede_sents else topic
 
     # Enforce: subtitle must not be a near-duplicate of the title (>60% word overlap)
     if _word_overlap(title, subtitle) > 0.6:
@@ -239,17 +243,48 @@ def assemble_article(
         for sent in lede_sents:
             sent = sent.strip()
             if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
-                subtitle = sent
+                subtitle = sent[:180]
                 break
         if not subtitle:
             body_sents = re.split(r'(?<=[.!?])\s', body.strip())
             for sent in body_sents[1:4]:
                 sent = sent.strip()
                 if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
-                    subtitle = sent
+                    subtitle = sent[:180]
                     break
         if not subtitle:
             subtitle = f"Details continue to emerge as the story develops around {topic}."
+
+    # Clamp subtitle: cut at last sentence boundary ≤ 180 chars, then pad to 160 if short
+    def _clamp_subtitle(text: str) -> str:
+        text = text.strip()
+        if len(text) <= 180:
+            return text
+        # Find last sentence-ending punctuation within 180 chars
+        window = text[:180]
+        last_end = max(window.rfind('.'), window.rfind('!'), window.rfind('?'))
+        if last_end > 60:
+            return text[:last_end + 1].strip()
+        # No sentence boundary — cut at word boundary
+        return text[:180].rsplit(' ', 1)[0].rstrip(',;:')
+
+    subtitle = _clamp_subtitle(subtitle)
+    if len(subtitle) < 160:
+        body_sents = re.split(r'(?<=[.!?])\s', body.strip())
+        for sent in body_sents:
+            sent = sent.strip()
+            if _word_overlap(subtitle, sent) > 0.5:
+                continue
+            candidate = _clamp_subtitle(subtitle.rstrip('.') + ". " + sent)
+            if len(candidate) >= 160:
+                subtitle = candidate
+                break
+
+    # Title must always be shorter than subtitle
+    if len(title) >= len(subtitle):
+        title_words = title.split()
+        if len(title_words) > 6:
+            title = " ".join(title_words[:6])
 
     # ── Build formatted article string (matches old parse_generated_article output) ──
     byline_line  = f"BYLINE: robin cc | {today_str}"
