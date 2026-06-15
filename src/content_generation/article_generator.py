@@ -437,15 +437,15 @@ def _normalize_direct_article(direct: Dict, topic: str, source_articles: List[Di
                 candidate = ""
                 for w in words:
                     test = (candidate + " " + w).strip()
-                    if len(test) > 75:
+                    if len(test) > 85:
                         break
                     candidate = test
                 title = candidate or " ".join(words[:7])
                 break
 
-    # Clamp title to 80 chars at a word boundary
-    if len(title) > 80:
-        title = title[:80].rsplit(' ', 1)[0].rstrip(',;:')
+    # Clamp title to 90 chars at a word boundary
+    if len(title) > 90:
+        title = title[:90].rsplit(' ', 1)[0].rstrip(',;:')
 
     # Enforce: subtitle must not be a near-duplicate of the title (>60% word overlap)
     if not subtitle or _word_overlap(title, subtitle) > 0.6:

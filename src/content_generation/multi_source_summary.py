@@ -146,7 +146,7 @@ RIGHT: "The Federal Reserve is expected to raise interest rates by 50 basis poin
 
 ━━━ OUTPUT FORMAT (follow exactly — do not add or remove any field) ━━━
 
-TITLE: <your ORIGINAL headline — 70-80 characters exactly, must differ from every banned headline above>
+TITLE: <your ORIGINAL headline — 80-90 characters, must be a COMPLETE thought/sentence, must differ from every banned headline above>
 SUBTITLE: <COMPLETE sentence, exactly 160–180 characters, names key actor + specific consequence — see SUBTITLE RULE above>
 BYLINE: robin cc | {today}
 LOCATION: <most specific city or country dateline you can derive from the content>
