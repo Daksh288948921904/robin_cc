@@ -1499,6 +1499,49 @@ function copySocialPost() {
   );
 }
 
+async function pushSocialToAll() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx < 0) { toast('err', 'No article selected'); return; }
+
+  const btn     = $('smodal-push-btn');
+  const label   = $('smodal-push-label');
+  const spinner = $('smodal-push-spinner');
+  const statusRow = $('smodal-push-status');
+  const chips   = { instagram: $('spush-ig'), twitter: $('spush-tw'), facebook: $('spush-fb'), linkedin: $('spush-li') };
+
+  btn.disabled = true;
+  label.textContent = 'Pushing…';
+  spinner.classList.remove('hidden');
+  statusRow.classList.remove('hidden');
+  Object.values(chips).forEach(c => { c.className = 'spush-chip pending'; });
+
+  try {
+    const res  = await fetch(`/api/articles/${realIdx}/push-social`, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'success') {
+      // All platforms routed via Slack — mark all ok if Slack succeeded
+      Object.keys(chips).forEach(p => {
+        chips[p].className = 'spush-chip ok';
+        chips[p].textContent = chips[p].textContent.split(' ')[0] + ' ' +
+          ({ instagram:'Instagram', twitter:'X', facebook:'Facebook', linkedin:'LinkedIn' }[p]);
+      });
+      label.textContent = 'Pushed ✓';
+      toast('ok', 'Social posts pushed to all platforms via Slack!');
+    } else {
+      Object.values(chips).forEach(c => { c.className = 'spush-chip err'; });
+      label.textContent = 'Push to All';
+      toast('err', data.message || 'Push failed');
+    }
+  } catch(e) {
+    Object.values(chips).forEach(c => { c.className = 'spush-chip err'; });
+    label.textContent = 'Push to All';
+    toast('err', `Push error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    spinner.classList.add('hidden');
+  }
+}
+
 async function regenSocialPosts() {
   const realIdx = CURRENT_REAL_IDX;
   if (realIdx < 0) return;

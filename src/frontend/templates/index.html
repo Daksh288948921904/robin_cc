@@ -735,6 +735,18 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         Copy Text
       </button>
+      <button class="smodal-push-btn" id="smodal-push-btn" onclick="pushSocialToAll()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        <span id="smodal-push-label">Push to All</span>
+        <span class="smodal-push-spinner hidden" id="smodal-push-spinner"></span>
+      </button>
+    </div>
+    <!-- Per-platform push status row (shown after push attempt) -->
+    <div class="smodal-push-status hidden" id="smodal-push-status">
+      <span class="spush-chip" id="spush-ig">📸 Instagram</span>
+      <span class="spush-chip" id="spush-tw">🐦 X</span>
+      <span class="spush-chip" id="spush-fb">👥 Facebook</span>
+      <span class="spush-chip" id="spush-li">💼 LinkedIn</span>
     </div>
 
   </div>

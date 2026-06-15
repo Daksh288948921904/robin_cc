@@ -2925,6 +2925,46 @@ body::before {
   transform:translateY(-1px);
 }
 .smodal-copy-btn:active{transform:translateY(0)}
+.smodal-push-btn{
+  display:flex;align-items:center;gap:6px;
+  background:linear-gradient(135deg,#f59e0b,#d97706);
+  border:none;border-radius:8px;color:#fff;
+  font-size:12px;font-weight:700;font-family:inherit;
+  padding:7px 14px;cursor:pointer;
+  box-shadow:0 4px 14px rgba(245,158,11,.35);
+  transition:all .18s;
+}
+.smodal-push-btn:hover{
+  background:linear-gradient(135deg,#d97706,#b45309);
+  box-shadow:0 6px 20px rgba(245,158,11,.5);
+  transform:translateY(-1px);
+}
+.smodal-push-btn:active{transform:translateY(0)}
+.smodal-push-btn:disabled{opacity:.55;pointer-events:none}
+.smodal-push-spinner{
+  width:10px;height:10px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.3);border-top-color:#fff;
+  animation:spin .7s linear infinite;flex-shrink:0;
+}
+.smodal-push-status{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:10px 20px 14px;
+  border-top:1px solid var(--border);
+  background:rgba(0,0,0,.1);
+}
+.spush-chip{
+  font-size:11px;font-weight:600;
+  padding:4px 10px;border-radius:20px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+  color:var(--ink3);transition:all .3s;
+}
+.spush-chip.ok{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.4);color:#34d399}
+.spush-chip.err{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.35);color:#f87171}
+.spush-chip.pending{
+  background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.35);color:#fbbf24;
+  animation:pulse 1s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 
 /* ── Social card images ── */
 .sp-tw-image{margin:10px 0;border-radius:12px;overflow:hidden;border:1px solid #2f3336}

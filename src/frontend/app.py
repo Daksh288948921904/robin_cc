@@ -812,6 +812,61 @@ async def generate_social_posts_route(request: Request, idx: int):
     })
 
 
+@app.post('/api/articles/{idx}/push-social')
+async def push_social_posts(request: Request, idx: int):
+    key = str(idx)
+    sp = SOCIAL_POSTS.get(key)
+    if not sp or not sp.get('posts'):
+        return JSONResponse({'status': 'error', 'message': 'Generate social posts first'}, status_code=400)
+
+    posts     = sp['posts']
+    image_url = sp.get('image_url', '')
+    heading   = (SUMMARIES.get(key) or {}).get('title') or (
+        SCRAPED_ARTICLES[idx].get('heading', 'Article') if 0 <= idx < len(SCRAPED_ARTICLES) else 'Article'
+    )
+
+    slack_url = os.environ.get('SLACK_WEBHOOK_URL', '').strip()
+    results   = {}
+
+    if slack_url:
+        try:
+            platform_rows = [
+                ('instagram', '📸 Instagram', posts.get('instagram', '')),
+                ('twitter',   '🐦 X / Twitter', posts.get('twitter', '')),
+                ('facebook',  '👥 Facebook', posts.get('facebook', '')),
+                ('linkedin',  '💼 LinkedIn', posts.get('linkedin', '')),
+            ]
+            blocks = [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": f"🚀 Social Push — {heading[:72]}", "emoji": True},
+                },
+            ]
+            if image_url:
+                blocks.append({"type": "image", "image_url": image_url, "alt_text": heading})
+            for _key, label, content in platform_rows:
+                if content:
+                    blocks.append({
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": f"*{label}*\n{content[:2900]}"},
+                    })
+                    blocks.append({"type": "divider"})
+
+            r = _requests.post(slack_url, json={"blocks": blocks}, timeout=8)
+            if r.ok:
+                results = {p: 'ok' for p, _, c in platform_rows if c}
+            else:
+                results = {p: f'err:{r.status_code}' for p, _, c in platform_rows if c}
+                return JSONResponse({'status': 'error', 'message': f'Slack returned {r.status_code}', 'results': results}, status_code=502)
+        except Exception as e:
+            logger.warning('push_social_posts Slack error: %s', e)
+            return JSONResponse({'status': 'error', 'message': str(e)}, status_code=502)
+    else:
+        return JSONResponse({'status': 'error', 'message': 'No SLACK_WEBHOOK_URL configured'}, status_code=400)
+
+    return JSONResponse({'status': 'success', 'results': results})
+
+
 @app.post('/api/articles/{idx}/preview-publish')
 async def preview_publish_to_hocalwire(request: Request, idx: int):
     if idx < 0 or idx >= len(SCRAPED_ARTICLES):
