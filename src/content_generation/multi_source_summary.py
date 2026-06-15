@@ -229,12 +229,10 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
     category_match = re.search(r"CATEGORY\s*:\s*(.+)", raw, re.IGNORECASE)
 
     def _clean_title(t: str) -> str:
-        """Strip markdown bold, angle-bracket placeholders, and stray punctuation; clamp to 80 chars at word boundary."""
+        """Strip markdown bold, angle-bracket placeholders, and stray punctuation."""
         t = re.sub(r"\*{1,2}|\_{1,2}", "", t)     # **bold** or __bold__
         t = re.sub(r"<[^>]+>", "", t)              # <template placeholders>
         t = t.strip(' "\'.,—–-')
-        if len(t) > 80:
-            t = t[:80].rsplit(' ', 1)[0].rstrip('.,;:')
         return t
 
     def _clamp_subtitle(text: str) -> str:

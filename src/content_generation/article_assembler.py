@@ -227,50 +227,60 @@ def assemble_article(
                 title = candidate or " ".join(words[:7])
                 break
 
-    # Clamp title to 80 chars at a word boundary
-    if len(title) > 80:
-        title = title[:80].rsplit(' ', 1)[0].rstrip(',;:')
+    # Strip trailing incomplete words/punctuation from title but never hard-cut mid-sentence
+    title = title.rstrip('.,;: ')
+
+    def _strip_md(text: str) -> str:
+        """Remove ## section headings and markdown artifacts from a text block."""
+        text = re.sub(r'^#{1,3}\s+[^\n]*', '', text, flags=re.MULTILINE)
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+        return re.sub(r'\s+', ' ', text).strip()
 
     # Always produce a subtitle — fall back to first sentence of lede if empty
     if not subtitle:
-        lede_sents = re.split(r'(?<=[.!?])\s', lede.strip())
-        subtitle = lede_sents[0][:180].strip() if lede_sents else topic
+        lede_clean = _strip_md(lede)
+        lede_sents = re.split(r'(?<=[.!?])\s', lede_clean.strip())
+        subtitle = lede_sents[0].strip() if lede_sents else topic
+
+    # Strip any leaked markdown from the subtitle itself
+    subtitle = _strip_md(subtitle)
 
     # Enforce: subtitle must not be a near-duplicate of the title (>60% word overlap)
     if _word_overlap(title, subtitle) > 0.6:
-        lede_sents = re.split(r'(?<=[.!?])\s', lede.strip())
+        lede_clean = _strip_md(lede)
+        lede_sents = re.split(r'(?<=[.!?])\s', lede_clean.strip())
         subtitle = ""
         for sent in lede_sents:
             sent = sent.strip()
             if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
-                subtitle = sent[:180]
+                subtitle = sent
                 break
         if not subtitle:
-            body_sents = re.split(r'(?<=[.!?])\s', body.strip())
-            for sent in body_sents[1:4]:
+            body_clean = _strip_md(body)
+            body_sents = re.split(r'(?<=[.!?])\s', body_clean.strip())
+            for sent in body_sents[1:6]:
                 sent = sent.strip()
                 if sent and _word_overlap(title, sent) <= 0.6 and len(sent) >= 60:
-                    subtitle = sent[:180]
+                    subtitle = sent
                     break
         if not subtitle:
             subtitle = f"Details continue to emerge as the story develops around {topic}."
 
-    # Clamp subtitle: cut at last sentence boundary ≤ 180 chars, then pad to 160 if short
+    # Clamp subtitle at last sentence boundary ≤ 180 chars; fall back to word boundary
     def _clamp_subtitle(text: str) -> str:
         text = text.strip()
         if len(text) <= 180:
             return text
-        # Find last sentence-ending punctuation within 180 chars
         window = text[:180]
         last_end = max(window.rfind('.'), window.rfind('!'), window.rfind('?'))
         if last_end > 60:
             return text[:last_end + 1].strip()
-        # No sentence boundary — cut at word boundary
         return text[:180].rsplit(' ', 1)[0].rstrip(',;:')
 
     subtitle = _clamp_subtitle(subtitle)
     if len(subtitle) < 160:
-        body_sents = re.split(r'(?<=[.!?])\s', body.strip())
+        body_clean = _strip_md(body)
+        body_sents = re.split(r'(?<=[.!?])\s', body_clean.strip())
         for sent in body_sents:
             sent = sent.strip()
             if _word_overlap(subtitle, sent) > 0.5:
