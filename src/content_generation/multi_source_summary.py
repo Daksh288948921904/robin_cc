@@ -229,11 +229,24 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
     category_match = re.search(r"CATEGORY\s*:\s*(.+)", raw, re.IGNORECASE)
 
     def _clean_title(t: str) -> str:
-        """Strip markdown bold, angle-bracket placeholders, and stray punctuation."""
+        """Strip markdown bold, angle-bracket placeholders, and stray punctuation; clamp to 80 chars at word boundary."""
         t = re.sub(r"\*{1,2}|\_{1,2}", "", t)     # **bold** or __bold__
         t = re.sub(r"<[^>]+>", "", t)              # <template placeholders>
         t = t.strip(' "\'.,—–-')
+        if len(t) > 80:
+            t = t[:80].rsplit(' ', 1)[0].rstrip('.,;:')
         return t
+
+    def _clamp_subtitle(text: str) -> str:
+        """Cut at last sentence boundary ≤ 180 chars; fall back to word boundary. Never cuts mid-word."""
+        text = text.strip()
+        if len(text) <= 180:
+            return text
+        window = text[:180]
+        last_end = max(window.rfind('.'), window.rfind('!'), window.rfind('?'))
+        if last_end > 60:
+            return text[:last_end + 1].strip()
+        return text[:180].rsplit(' ', 1)[0].rstrip('.,;:')
 
     if title_match:
         title = _clean_title(title_match.group(1))
@@ -275,6 +288,7 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
     subtitle = re.sub(r"\*+", "", subtitle).strip()
     if subtitle.upper() in ("SUB", "SUBTITLE", "NONE", "N/A", ""):
         subtitle = ""
+    subtitle = _clamp_subtitle(subtitle)
 
     # Enforce minimum subtitle length — if too short, pull the lede sentence from the body
     if len(subtitle) < 100:
@@ -287,7 +301,7 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
         for sent in first_sentences:
             sent = sent.strip()
             if len(sent) >= 100:
-                subtitle = sent[:220].rstrip('.,;') if len(sent) > 220 else sent
+                subtitle = _clamp_subtitle(sent)
                 break
             elif len(sent) >= 60 and len(subtitle) == 0:
                 subtitle = sent  # better than nothing
