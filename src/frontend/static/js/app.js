@@ -23,6 +23,7 @@ let FEED_VISIBLE     = true;  // false when activity view is shown
 let SELECTED_IMAGE   = null;  // URL chosen in the image picker (null = use article default)
 let _hocalwirePreviewData = null; // stashed between preview fetch and confirm
 let LEAD_STORY_IDX   = null;  // server_idx of article currently set as lead story on Global News
+let _readerGenToken  = 0;     // incremented on open/close; stale async tasks bail when it changes
 
 // ── DOM ──────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -390,6 +391,8 @@ function openReader(i) {
   const cat = catOf(a);
   const words = wc(a);
 
+  _readerGenToken++;            // cancel any in-flight generation from the previous article
+
   CURRENT_IDX      = i;
   CURRENT_SUMM     = null;
   CURRENT_REAL_IDX = -1;
@@ -550,9 +553,12 @@ function timelineLoadingHTML() {
 }
 
 async function loadCoverage(realIdx) {
+  const myToken = _readerGenToken;
   try {
     const res  = await fetch(`/api/articles/${realIdx}/coverage`);
+    if (_readerGenToken !== myToken) return;
     const data = await res.json();
+    if (_readerGenToken !== myToken) return;
 
     if (data.status !== 'success' || !data.coverage?.length) {
       $('coverage-section').innerHTML = coverageEmptyHTML();
@@ -579,13 +585,14 @@ async function loadCoverage(realIdx) {
         </ul>`;
     }
     // Launch RAG generation, timeline, and social reactions simultaneously
-    generateSummaryRag(realIdx);
-    generateTimeline(realIdx);
+    generateSummaryRag(realIdx, myToken);
+    generateTimeline(realIdx, myToken);
     loadSocialReactions(realIdx);
   } catch(e) {
+    if (_readerGenToken !== myToken) return;
     $('coverage-section').innerHTML = coverageEmptyHTML(`Error: ${e.message}`);
-    generateSummaryRag(realIdx);
-    generateTimeline(realIdx);
+    generateSummaryRag(realIdx, myToken);
+    generateTimeline(realIdx, myToken);
     loadSocialReactions(realIdx);
   }
 }
@@ -794,7 +801,8 @@ async function generateSummary(realIdx) {
   }
 }
 
-async function generateSummaryRag(realIdx) {
+async function generateSummaryRag(realIdx, genToken) {
+  const myToken = genToken ?? _readerGenToken;
   $('summary-section').innerHTML = `<div class="coverage-loading">
     <span class="cov-spinner"></span>
     <span id="rag-status-msg">Running RAG pipeline…</span>
@@ -802,7 +810,9 @@ async function generateSummaryRag(realIdx) {
 
   try {
     const startRes  = await fetch(`/api/articles/${realIdx}/rag-generate`, {method:'POST'});
+    if (_readerGenToken !== myToken) return;
     const startData = await startRes.json();
+    if (_readerGenToken !== myToken) return;
     if (startData.status === 'error') {
       $('summary-section').innerHTML = `<div class="coverage-empty">Error: ${esc(startData.message||'Failed to start')}</div>`;
       return;
@@ -812,11 +822,14 @@ async function generateSummaryRag(realIdx) {
     let elapsed = 0;
     while (true) {
       await new Promise(r => setTimeout(r, 4000));
+      if (_readerGenToken !== myToken) return;
       elapsed += 4;
       const msg = $('rag-status-msg');
 
       const res  = await fetch(`/api/articles/${realIdx}/rag-status`);
+      if (_readerGenToken !== myToken) return;
       const data = await res.json();
+      if (_readerGenToken !== myToken) return;
 
       if (data.status === 'error') {
         $('summary-section').innerHTML = `<div class="coverage-empty">Error: ${esc(data.message||'Generation failed')}</div>`;
@@ -830,6 +843,7 @@ async function generateSummaryRag(realIdx) {
       if (msg) msg.textContent = data.message || `Running RAG pipeline… ${elapsed}s`;
     }
   } catch(e) {
+    if (_readerGenToken !== myToken) return;
     $('summary-section').innerHTML = `<div class="coverage-empty">Network error: ${esc(e.message)}</div>`;
   }
 }
@@ -1683,14 +1697,17 @@ async function runNewsCheck() {
 }
 
 // ── Timeline ─────────────────────────────────────────────────
-async function generateTimeline(realIdx) {
+async function generateTimeline(realIdx, genToken) {
+  const myToken = genToken ?? _readerGenToken;
   const tlOuter = $('timeline-outer');
   if (tlOuter) tlOuter.style.display = '';
   $('timeline-section').innerHTML = timelineLoadingHTML();
 
   try {
     const res  = await fetch(`/api/articles/${realIdx}/timeline`, {method:'POST'});
+    if (_readerGenToken !== myToken) return;
     const data = await res.json();
+    if (_readerGenToken !== myToken) return;
 
     if (data.status !== 'success' || !data.timeline?.length) {
       if (tlOuter) tlOuter.style.display = 'none';
@@ -1699,6 +1716,7 @@ async function generateTimeline(realIdx) {
 
     renderTimeline(data.timeline);
   } catch(e) {
+    if (_readerGenToken !== myToken) return;
     if (tlOuter) tlOuter.style.display = 'none';
   }
 }
@@ -2002,6 +2020,7 @@ function _makePickOption(type, label, sublabel, imgUrl, selected) {
 }
 
 function closeReader() {
+  _readerGenToken++;            // abort any in-flight generation
   readerOverlay.classList.remove('open');
   document.body.style.overflow='';
   READER_OPEN = false;
