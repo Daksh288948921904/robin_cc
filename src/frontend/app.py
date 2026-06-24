@@ -98,6 +98,8 @@ logging.basicConfig(
     level=_log_level,
     format='[%(asctime)s] %(levelname)s %(name)s: %(message)s',
     datefmt='%H:%M:%S',
+    handlers=[logging.StreamHandler(), logging.FileHandler('/tmp/robin_cc.log')],
+    force=True,
 )
 logger = logging.getLogger(__name__)
 
@@ -962,7 +964,10 @@ async def publish_to_hocalwire(request: Request, idx: int):
     subtitle       = (body_json.get('edited_subtitle') or cached.get('subtitle') or cached.get('sub_heading') or main_article.get('sub_heading', '')).strip()
     selected_image = body_json.get('selected_image')
     selected_tweets = body_json.get('selected_tweets') or []
-    logger.info("PUBLISH idx=%s selected_tweets count=%d tweets=%s", idx, len(selected_tweets), selected_tweets[:1] if selected_tweets else '[]')
+    with open('/tmp/robin_publish_debug.log', 'a') as _dbg:
+        import json as _json
+        _dbg.write(f"PUBLISH idx={idx} tweets_count={len(selected_tweets)} tweets={_json.dumps(selected_tweets[:1]) if selected_tweets else '[]'}\n")
+        _dbg.write(f"BODY_KEYS={list(body_json.keys())}\n")
 
     if not title or not body:
         return JSONResponse({'status': 'error', 'message': 'Summary has no title or body'}, status_code=400)

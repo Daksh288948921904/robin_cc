@@ -146,7 +146,7 @@ RIGHT: "The Federal Reserve is expected to raise interest rates by 50 basis poin
 
 ━━━ OUTPUT FORMAT (follow exactly — do not add or remove any field) ━━━
 
-TITLE: <your ORIGINAL headline — 85-100 characters, must be a COMPLETE thought/sentence that does NOT end abruptly or mid-phrase, must differ from every banned headline above>
+TITLE: <your ORIGINAL headline — MUST be 85-100 characters long (count carefully!), must be a COMPLETE thought/sentence that does NOT end abruptly or mid-phrase, must differ from every banned headline above. Headlines under 80 characters are REJECTED — add specific details like names, places, consequences to reach 85+ chars>
 SUBTITLE: <COMPLETE sentence, exactly 160–180 characters, names key actor + specific consequence — see SUBTITLE RULE above>
 BYLINE: robin cc | {today}
 LOCATION: <most specific city or country dateline you can derive from the content>
@@ -279,6 +279,18 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
                 if first_sent and len(first_sent[0].split()) >= 4:
                     title = first_sent[0][:90].rstrip('.')
 
+    # Enforce minimum title length — short titles lose context
+    if len(title) < 60:
+        raw_subtitle = subtitle_match.group(1).strip() if subtitle_match else ""
+        if raw_subtitle and len(raw_subtitle) > 20:
+            combined = f"{title}: {raw_subtitle}"
+            if len(combined) > 100:
+                cut = combined[:100].rsplit(' ', 1)[0].rstrip('.,;:—–-')
+                title = cut
+            else:
+                title = combined
+        elif not title:
+            title = main_article.get("heading") or "News Briefing"
     logger.info("Parsed title: %s", title)
 
     subtitle = subtitle_match.group(1).strip() if subtitle_match else ""
