@@ -26,6 +26,7 @@ tenacity==9.1.2
 httpx==0.28.1
 feedparser==6.0.10
 lxml_html_clean==0.4.4
+ddgs>=9.14.0
 
 # ===========================================
 # NLP & ML
@@ -38,7 +39,7 @@ langdetect==1.0.9
 # ===========================================
 # LLM Integration (FREE - Groq)
 # ===========================================
-groq==1.0.0
+groq>=0.25.0
 
 # ===========================================
 # Image Generation (Local Stable Diffusion)
