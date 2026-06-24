@@ -22,6 +22,7 @@ let ACTIVITY_MAP     = {};    // realIdx → {published_hocalwire, video_sent, h
 let FEED_VISIBLE     = true;  // false when activity view is shown
 let SELECTED_IMAGE   = null;  // URL chosen in the image picker (null = use article default)
 let _hocalwirePreviewData = null; // stashed between preview fetch and confirm
+let _selectedTweets      = {};   // realIdx → [tweet objects]
 let LEAD_STORY_IDX   = null;  // server_idx of article currently set as lead story on Global News
 let _readerGenToken  = 0;     // incremented on open/close; stale async tasks bail when it changes
 
@@ -433,7 +434,7 @@ function openReader(i) {
       ${img ? `<img id="r-scraped-img" src="${esc(img)}" alt="" loading="lazy" style="width:100%;border-radius:12px;max-height:400px;object-fit:cover">` : ''}
       <div id="r-ai-status" style="margin-top:6px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink4)">
         <span class="cov-spinner" style="width:9px;height:9px;border-width:1.5px;flex-shrink:0"></span>
-        <span>Generating AI image with SD Turbo…</span>
+        <span>Generating image…</span>
       </div>
     </div>`;
 
@@ -463,8 +464,7 @@ function openReader(i) {
   const igOuter = $('social-instagram-outer');
   if (twOuter) twOuter.style.display = 'none';
   if (igOuter) igOuter.style.display = 'none';
-  $('social-twitter-section').innerHTML  = '';
-  $('social-instagram-section').innerHTML = '';
+  $('social-twitter-section').innerHTML = '';
   const pb = $('publish-btn');
   if (pb) { pb.style.display = 'none'; pb.disabled = false; $('publish-label').textContent = 'Publish to Hocalwire'; $('publish-spinner').classList.add('hidden'); }
 
@@ -542,7 +542,7 @@ function coverageEmptyHTML(msg='No matching coverage found from other outlets.')
 function summaryLoadingHTML() {
   return `<div class="coverage-loading">
     <span class="cov-spinner"></span>
-    <span>Generating AI briefing…</span>
+    <span>Generating briefing…</span>
   </div>`;
 }
 function timelineLoadingHTML() {
@@ -1033,10 +1033,11 @@ async function confirmPublishToHocalwire() {
   confirmSpinner.classList.remove('hidden');
 
   try {
+    const publishPayload = {...edited, selected_tweets: getSelectedTweets()};
     const res  = await fetch(`/api/articles/${realIdx}/publish`, {
       method:  'POST',
       headers: {'Content-Type': 'application/json'},
-      body:    JSON.stringify(edited),
+      body:    JSON.stringify(publishPayload),
     });
     const data = await res.json().catch(() => ({}));
 
@@ -1775,14 +1776,12 @@ async function loadSocialReactions(realIdx) {
   const twOuter = $('social-twitter-outer');
   const igOuter = $('social-instagram-outer');
   const twSec   = $('social-twitter-section');
-  const igSec   = $('social-instagram-section');
 
   if (twOuter) twOuter.style.display = '';
-  if (igOuter) igOuter.style.display = '';
+  if (igOuter) igOuter.style.display = 'none';
 
-  const loadHTML = `<div class="coverage-loading"><span class="cov-spinner"></span><span>Fetching social reactions… (may take ~2 min)</span></div>`;
+  const loadHTML = `<div class="coverage-loading"><span class="cov-spinner"></span><span>Searching for social reactions…</span></div>`;
   twSec.innerHTML = loadHTML;
-  igSec.innerHTML = loadHTML;
 
   try {
     const res  = await fetch(`/api/articles/${realIdx}/social`, {method:'POST'});
@@ -1791,15 +1790,12 @@ async function loadSocialReactions(realIdx) {
     if (data.status !== 'success' || !data.social) {
       const msg = esc(data.message || 'No social data available');
       twSec.innerHTML = `<div class="coverage-empty">${msg}</div>`;
-      igSec.innerHTML = `<div class="coverage-empty">${msg}</div>`;
       return;
     }
 
-    renderSocialSection('twitter',   data.social.twitter,   twSec,  twOuter,  realIdx);
-    renderSocialSection('instagram', data.social.instagram, igSec,  igOuter,  realIdx);
+    renderSocialSection('twitter', data.social.twitter, twSec, twOuter, realIdx);
   } catch(e) {
     twSec.innerHTML = `<div class="coverage-empty">Error: ${esc(e.message)}</div>`;
-    igSec.innerHTML = `<div class="coverage-empty">Error: ${esc(e.message)}</div>`;
   }
 }
 
@@ -1813,11 +1809,12 @@ function renderSocialSection(platform, data, secEl, outerEl, _realIdx) {
   const isTw  = platform === 'twitter';
   const editId = `${platform}-edit-btn`;
 
-  const postsHTML = posts.map(p => {
+  const postsHTML = posts.map((p, pi) => {
     const url    = esc(p.post_url || '#');
     const author = esc(isTw ? `@${p.username||p.author}` : `@${p.author}`);
     const text   = esc(isTw ? (p.text||'') : (p.caption||''));
-    const stats  = isTw
+    const hasStats = (p.likes||0) + (p.reposts||0) + (p.replies||0) + (p.comments_count||0) > 0;
+    const stats  = !hasStats ? '' : isTw
       ? `<span class="soc-stat">❤ ${p.likes||0}</span><span class="soc-stat">🔁 ${p.reposts||0}</span><span class="soc-stat">💬 ${p.replies||0}</span>`
       : `<span class="soc-stat">❤ ${p.likes||0}</span><span class="soc-stat">💬 ${p.comments_count||0}</span>`;
 
@@ -1826,9 +1823,17 @@ function renderSocialSection(platform, data, secEl, outerEl, _realIdx) {
       : '';
 
     const hasUrl = url && url !== '#' && url !== '';
+    const tweetData = isTw ? esc(JSON.stringify(p)) : '';
+    const checkboxHTML = isTw ? `
+      <label class="soc-select-label" title="Select for publishing">
+        <input type="checkbox" class="soc-select-cb" data-pidx="${pi}" data-tweet="${tweetData}" onchange="toggleTweetSelect(this, ${_realIdx})"/>
+        <span class="soc-select-tick"></span>
+      </label>` : '';
+
     return `
-      <div class="soc-post">
+      <div class="soc-post${isTw ? ' soc-post-selectable' : ''}" id="soc-post-${platform}-${pi}">
         <div class="soc-post-header">
+          ${checkboxHTML}
           ${hasUrl
             ? `<a class="soc-author soc-author-link" href="${url}" target="_blank" rel="noopener">${author}</a>`
             : `<span class="soc-author">${author}</span>`}
@@ -1842,25 +1847,63 @@ function renderSocialSection(platform, data, secEl, outerEl, _realIdx) {
       </div>`;
   }).join('');
 
-  const summaryHTML = `<div class="soc-summary" id="${platform}-summary-body">${
-    (data.summary||'')
-      .replace(/^#{2}\s+(.+)$/gm,'<h3 class="soc-sum-head" contenteditable="false">$1</h3>')
-      .replace(/^#{3}\s+(.+)$/gm,'<h4 class="soc-sum-head" contenteditable="false">$1</h4>')
-      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g,'<em>$1</em>')
-      .split(/\n+/).filter(Boolean)
-      .map(l => l.startsWith('<h') ? l : `<p class="soc-sum-para" contenteditable="false">${l}</p>`)
-      .join('')
-  }</div>`;
+  const rawSummary = (data.summary||'');
+
+  // Extract sentiment from first line (e.g. "~60% supportive, ~30% critical")
+  const sentimentMatch = rawSummary.match(/(?:sentiment|mood|tone|reaction)[^.]*?(angry|furious|outraged|disappointed|critical|negative|concerned|anxious|worried|divided|mixed|split|neutral|cautious|skeptic|supportive|positive|hopeful|excited|celebratory|proud|happy|enthusiastic|amused|sarcastic|mocking|humorous|indifferent)/i);
+  const sentimentWord = sentimentMatch ? sentimentMatch[1].toLowerCase() : null;
+
+  const sentimentConfig = {
+    angry:'neg', furious:'neg', outraged:'neg', disappointed:'neg', critical:'neg', negative:'neg', concerned:'neg', anxious:'neg', worried:'neg',
+    divided:'mix', mixed:'mix', split:'mix', neutral:'mix', cautious:'mix', skeptic:'mix',
+    supportive:'pos', positive:'pos', hopeful:'pos', excited:'pos', celebratory:'pos', proud:'pos', happy:'pos', enthusiastic:'pos',
+    amused:'fun', sarcastic:'fun', mocking:'fun', humorous:'fun',
+    indifferent:'neu',
+  };
+  const sentimentType = sentimentWord ? (sentimentConfig[sentimentWord] || 'mix') : 'mix';
+  const sentimentLabels = { neg:'Negative', mix:'Mixed', pos:'Positive', fun:'Playful', neu:'Neutral' };
+  const sentimentIcons  = { neg:'😠', mix:'⚖️', pos:'😊', fun:'😏', neu:'😐' };
+
+  const formattedSummary = rawSummary
+    .replace(/^#{1,2}\s+\*?\*?Sentiment Overview\*?\*?\s*$/gim, '')
+    .replace(/^#{1,2}\s+\*?\*?Public Mood\*?\*?\s*$/gim, '')
+    .replace(/^#{2}\s+(.+)$/gm,'<h3 class="soc-sum-head" contenteditable="false">$1</h3>')
+    .replace(/^#{3}\s+(.+)$/gm,'<h4 class="soc-sum-head" contenteditable="false">$1</h4>')
+    .replace(/^[-•]\s+(.+)$/gm,'<li class="soc-sum-bullet">$1</li>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/@(\w+)/g,'<span class="soc-mention">@$1</span>')
+    .split(/\n+/).filter(Boolean)
+    .map(l => {
+      if (l.startsWith('<h') || l.startsWith('<li')) return l;
+      return `<p class="soc-sum-para" contenteditable="false">${l}</p>`;
+    })
+    .join('')
+    .replace(/(<li[^>]*>.*?<\/li>\s*)+/g, m => `<ul class="soc-sum-list">${m}</ul>`);
+
+  const summaryHTML = `<div class="soc-summary" id="${platform}-summary-body">${formattedSummary}</div>`;
+
+  const sentimentBadge = `<div class="soc-sentiment-badge soc-sentiment-${sentimentType}">
+    <span class="soc-sentiment-icon">${sentimentIcons[sentimentType]}</span>
+    <span class="soc-sentiment-text">${sentimentLabels[sentimentType]}</span>
+  </div>`;
 
   secEl.innerHTML = `
     <div class="social-result">
-      <div class="soc-ai-block">
-        <div class="soc-ai-label">AI Analysis</div>
+      <div class="soc-analysis-block">
+        <div class="soc-analysis-header">
+          <div class="soc-analysis-title">Sentiment Analysis</div>
+          ${sentimentBadge}
+        </div>
         ${summaryHTML}
       </div>
       <div class="soc-posts-block">
-        <div class="soc-posts-label">${posts.length} post${posts.length!==1?'s':''} found</div>
+        <div class="soc-posts-header">
+          <div class="soc-posts-label">${posts.length} post${posts.length!==1?'s':''} found</div>
+          ${isTw ? `<div class="soc-select-counter" id="soc-select-counter">
+            <span class="soc-select-count" id="soc-select-count">0</span> selected for publish
+          </div>` : ''}
+        </div>
         <div class="soc-posts-list">${postsHTML}</div>
       </div>
       <div class="soc-actions">
@@ -1893,6 +1936,32 @@ function toggleSocialEdit(platform) {
 
   if (isOn) toast('info', `${isTw ? 'Twitter' : 'Instagram'} reactions unlocked — click any text to edit`);
   else toast('ok', 'Edits saved');
+}
+
+function toggleTweetSelect(cb, realIdx) {
+  const key = String(realIdx);
+  if (!_selectedTweets[key]) _selectedTweets[key] = [];
+
+  const tweet = JSON.parse(cb.dataset.tweet);
+  const card  = cb.closest('.soc-post');
+
+  if (cb.checked) {
+    _selectedTweets[key].push(tweet);
+    if (card) card.classList.add('soc-post-selected');
+  } else {
+    _selectedTweets[key] = _selectedTweets[key].filter(t => t.post_url !== tweet.post_url);
+    if (card) card.classList.remove('soc-post-selected');
+  }
+
+  const countEl = $('soc-select-count');
+  const counterEl = $('soc-select-counter');
+  if (countEl) countEl.textContent = _selectedTweets[key].length;
+  if (counterEl) counterEl.classList.toggle('has-selected', _selectedTweets[key].length > 0);
+}
+
+function getSelectedTweets() {
+  const key = String(CURRENT_REAL_IDX);
+  return _selectedTweets[key] || [];
 }
 
 // ── Image picker helper ──────────────────────────────────────
@@ -1942,7 +2011,7 @@ async function loadAIImage(realIdx) {
       picker.id = 'img-picker';
       picker.className = 'img-picker';
 
-      const aiOpt = _makePickOption('ai', 'AI Generated', data.model_label || 'FLUX', data.image_url, true);
+      const aiOpt = _makePickOption('ai', 'Generated', data.model_label || 'FLUX', data.image_url, true);
       picker.appendChild(aiOpt);
 
       if (scrapedUrl) {
@@ -1958,7 +2027,7 @@ async function loadAIImage(realIdx) {
       const regenBtn = document.createElement('button');
       regenBtn.id = 'reader-regen-btn';
       regenBtn.className = 'reader-regen-btn';
-      regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Regen AI Image`;
+      regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Regenerate Image`;
       regenBtn.onclick = () => regenReaderImage(realIdx);
       container.insertBefore(regenBtn, picker.nextSibling);
     }
@@ -1997,7 +2066,7 @@ async function regenReaderImage(realIdx) {
     toast('err', `Regen error: ${e.message}`);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Regen AI Image`;
+    btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Regenerate Image`;
   }
 }
 

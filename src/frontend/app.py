@@ -741,16 +741,13 @@ async def generate_social(request: Request, idx: int):
         return JSONResponse({'status': 'error', 'message': 'Article has no headline'}, status_code=400)
 
     try:
-        from src.scrapers.apify_scrape import scrape_twitter, scrape_instagram
+        from src.scrapers.apify_scrape import scrape_twitter
         from src.content_generation.apify_scrape_summary import generate_social_summary
 
-        tw_posts = scrape_twitter(headline, max_items=20)
-        ig_posts = scrape_instagram(headline, max_items=15)
+        tw_posts = scrape_twitter(headline, max_items=10)
+        twitter_data = generate_social_summary('twitter', tw_posts, headline)
 
-        twitter_data   = generate_social_summary('twitter',   tw_posts, headline)
-        instagram_data = generate_social_summary('instagram', ig_posts, headline)
-
-        result = {'twitter': twitter_data, 'instagram': instagram_data}
+        result = {'twitter': twitter_data}
     except Exception as e:
         logger.error('Social scrape error: %s\n%s', e, traceback.format_exc())
         return JSONResponse({'status': 'error', 'message': str(e)}, status_code=500)
@@ -964,6 +961,8 @@ async def publish_to_hocalwire(request: Request, idx: int):
     body           = body_json.get('edited_body')  or cached.get('body', '')
     subtitle       = (body_json.get('edited_subtitle') or cached.get('subtitle') or cached.get('sub_heading') or main_article.get('sub_heading', '')).strip()
     selected_image = body_json.get('selected_image')
+    selected_tweets = body_json.get('selected_tweets') or []
+    logger.info("PUBLISH idx=%s selected_tweets count=%d tweets=%s", idx, len(selected_tweets), selected_tweets[:1] if selected_tweets else '[]')
 
     if not title or not body:
         return JSONResponse({'status': 'error', 'message': 'Summary has no title or body'}, status_code=400)
@@ -985,6 +984,7 @@ async def publish_to_hocalwire(request: Request, idx: int):
             'language':    'en',
             'location':    cached.get('location') or main_article.get('location', 'Hyderabad'),
             'reporter':    cached.get('reporter', ''),
+            'selected_tweets': selected_tweets,
         }
 
         success = upload_to_hocalwire(article_payload)
@@ -1023,6 +1023,7 @@ async def publish_to_hocalwire(request: Request, idx: int):
                 'reporter':    cached.get('reporter', ''),
                 'server_idx':  idx,
                 'country':     _country,
+                'selected_tweets': selected_tweets,
             }, feed_id)
             if gn_id:
                 main_article['global_news_id']      = gn_id

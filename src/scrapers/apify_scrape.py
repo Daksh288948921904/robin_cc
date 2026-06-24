@@ -1,171 +1,204 @@
 """
-Apify-based social media scraper — Twitter/X and Instagram.
+Twitter/X scraper — FREE, no API tokens needed.
 
-Actors used (both tested working):
-  Twitter  → gentle_cloud~twitter-tweets-scraper
-  Instagram → apify~instagram-hashtag-scraper
+Uses DuckDuckGo search to find tweets + Twitter oEmbed API for full text.
 """
 
 import os
 import re
-import time
 import logging
 import requests
 
+from src.content_generation.groq_pool import get_groq_client, rotate_groq_key
+
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://api.apify.com/v2"
-TW_ACTOR = "gentle_cloud~twitter-tweets-scraper"
-IG_ACTOR = "apify~instagram-hashtag-scraper"
+
+_STOP_WORDS = {
+    'the','a','an','in','on','at','to','for','of','and','or','but','with',
+    'from','by','is','are','was','were','be','been','have','has','had',
+    'will','would','could','should','may','might','not','no','up','out',
+    'if','as','it','its','we','he','she','they','what','which','who',
+    'this','that','these','those','over','after','before','about','through',
+    'when','while','than','such','say','says','said','also','more','new',
+    'into','just','amid','under','most','many','some','being','make',
+    'gets','news','report','reports','according','likely','every','much',
+}
 
 
-def _token() -> str:
-    t = os.getenv("APIFY_API_TOKEN", "")
-    if not t:
-        raise RuntimeError("APIFY_API_TOKEN not set in environment")
-    return t
-
-
-def _run_actor(actor_id: str, input_data: dict, timeout: int = 180) -> list:
-    """Start an Apify actor run, poll until done, return dataset items."""
-    token  = _token()
-    params = {"token": token}
-
-    resp = requests.post(
-        f"{BASE_URL}/acts/{actor_id}/runs",
-        json=input_data, params=params, timeout=30,
-    )
-    resp.raise_for_status()
-    run_data   = resp.json()["data"]
-    run_id     = run_data["id"]
-    dataset_id = run_data["defaultDatasetId"]
-
-    status_url = f"{BASE_URL}/actor-runs/{run_id}"
-    deadline   = time.time() + timeout
-
-    while time.time() < deadline:
-        time.sleep(6)
-        sr     = requests.get(status_url, params=params, timeout=15)
-        sr.raise_for_status()
-        status = sr.json()["data"]["status"]
-        if status == "SUCCEEDED":
-            break
-        if status in ("FAILED", "ABORTED", "TIMED-OUT"):
-            logger.error("Apify run %s ended with status=%s", run_id, status)
-            return []
-    else:
-        logger.warning("Apify run %s timed out after %ds", run_id, timeout)
-        return []
-
-    ir = requests.get(
-        f"{BASE_URL}/datasets/{dataset_id}/items",
-        params={**params, "clean": "true", "limit": 50},
-        timeout=30,
-    )
-    ir.raise_for_status()
-    return ir.json()
-
-
-def _headline_to_hashtags(headline: str, max_tags: int = 3) -> list[str]:
-    """Pick the most meaningful words from headline for hashtag search."""
-    STOP = {
-        'the','a','an','in','on','at','to','for','of','and','or','but','with',
-        'from','by','is','are','was','were','be','been','have','has','had',
-        'will','would','could','should','may','might','not','no','up','out',
-        'if','as','it','its','we','he','she','they','what','which','who',
-        'this','that','these','those','over','after','before','about','through',
-        'when','while','than','such','say','says','said','also','more','new',
-    }
-    words = [w for w in re.findall(r'\b[a-zA-Z]{4,}\b', headline)
-             if w.lower() not in STOP]
+def _extract_keywords(headline: str, max_words: int = 5) -> list[str]:
+    words = [w for w in re.findall(r'\b[a-zA-Z]{3,}\b', headline)
+             if w.lower() not in _STOP_WORDS]
     seen, out = set(), []
     for w in words:
         lw = w.lower()
         if lw not in seen:
             seen.add(lw)
             out.append(lw)
-        if len(out) >= max_tags:
+        if len(out) >= max_words:
             break
     return out or ['news']
 
 
-def scrape_twitter(query: str, max_items: int = 20) -> list:
-    """
-    Search Twitter/X for tweets about the news headline.
-    Returns list of post dicts with url, text, author, stats.
-    """
+def _llm_search_query(headline: str) -> str:
+    client = get_groq_client()
+    if not client:
+        logger.warning("No Groq client, falling back to keyword extraction")
+        return " ".join(_extract_keywords(headline, max_words=5))
+
+    prompt = (
+        "You are a Twitter/X search expert. Given a news headline, produce a single "
+        "Twitter search query that will find tweets discussing this specific story.\n\n"
+        "Rules:\n"
+        "- Use 3-5 simple keywords that people would actually use when tweeting about this story\n"
+        "- Do NOT use quotes around phrases — just use individual words\n"
+        "- Do NOT use Twitter operators like OR, AND, from:, filter:, etc.\n"
+        "- Do NOT add hashtags\n"
+        "- Prefer proper nouns (names of people, countries, organizations) over generic words\n"
+        "- Output ONLY the search query, nothing else — no explanation\n\n"
+        f"Headline: {headline}\n\n"
+        "Search query:"
+    )
+
+    for attempt in range(2):
+        try:
+            resp = client.chat.completions.create(
+                model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=60,
+            )
+            query = resp.choices[0].message.content.strip().strip('"').strip("'")
+            query = re.sub(r'["\']', '', query)
+            if query:
+                logger.info("LLM-generated Twitter query: %r", query)
+                return query
+        except Exception as e:
+            logger.warning("Groq search-query attempt %d failed: %s", attempt + 1, e)
+            if rotate_groq_key(reason=f"search query gen failed: {e}"):
+                client = get_groq_client()
+            else:
+                break
+
+    logger.warning("LLM query generation failed, falling back to keyword extraction")
+    return " ".join(_extract_keywords(headline, max_words=5))
+
+
+def _tweet_is_relevant(tweet_text: str, keywords: list[str], min_matches: int = 2) -> bool:
+    text_lower = tweet_text.lower()
+    matches = sum(1 for kw in keywords if kw.lower() in text_lower)
+    return matches >= min(min_matches, len(keywords))
+
+
+def _fetch_oembed(tweet_url: str) -> dict | None:
+    """Fetch full tweet text via Twitter's free oEmbed API."""
     try:
-        raw = _run_actor(TW_ACTOR, {
-            "searchTerms": [query],
-            "maxTweets":   max_items,
-        })
-
-        posts = []
-        for tw in raw[:max_items]:
-            # Skip items that signal no results
-            if "noResults" in tw or not tw.get("full_text"):
-                continue
-
-            user     = tw.get("user", {})
-            legacy   = user.get("legacy", {}) if isinstance(user, dict) else {}
-            username = legacy.get("screen_name") or tw.get("user_id_str") or "unknown"
-            name     = legacy.get("name") or username
-
-            posts.append({
-                "platform":  "twitter",
-                "post_url":  tw.get("url") or f"https://x.com/{username}/status/{tw.get('id_str','')}",
-                "author":    name,
-                "username":  username,
-                "text":      tw.get("full_text") or "",
-                "likes":     tw.get("favorite_count") or 0,
-                "reposts":   tw.get("retweet_count") or 0,
-                "replies":   tw.get("reply_count") or 0,
-                "timestamp": tw.get("created_at") or "",
-            })
-        return posts
+        resp = requests.get(
+            "https://publish.twitter.com/oembed",
+            params={"url": tweet_url, "omit_script": "true", "hide_media": "true"},
+            timeout=8,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            html = data.get("html", "")
+            text = re.sub(r'<[^>]+>', ' ', html)
+            text = re.sub(r'\s+', ' ', text).strip()
+            text = re.sub(r'&mdash;.*$', '', text).strip()
+            text = text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+            return {
+                "text": text,
+                "author": data.get("author_name", ""),
+                "author_url": data.get("author_url", ""),
+            }
     except Exception as e:
-        logger.error("Twitter scrape error: %s", e)
+        logger.debug("oEmbed fetch failed for %s: %s", tweet_url, e)
+    return None
+
+
+def _search_ddg(query: str, max_results: int = 20) -> list[dict]:
+    """Search DuckDuckGo for tweets. Returns list of {href, title, body}."""
+    try:
+        from ddgs import DDGS
+        results = DDGS().text(
+            f"site:x.com {query}",
+            max_results=max_results,
+        )
+        logger.info("DuckDuckGo returned %d results for query: %r", len(results), query)
+        return results
+    except Exception as e:
+        logger.error("DuckDuckGo search failed: %s", e)
         return []
 
 
-def scrape_instagram(query: str, max_items: int = 15) -> list:
+def scrape_twitter(query: str, max_items: int = 10) -> list:
     """
-    Scrape Instagram posts by hashtag derived from the news headline.
-    Returns list of post dicts with url, caption, comments, stats.
+    Search for tweets about a news headline using DuckDuckGo + Twitter oEmbed.
+    Completely free — no API tokens required.
     """
     try:
-        hashtags = _headline_to_hashtags(query, max_tags=2)
-        raw = _run_actor(IG_ACTOR, {
-            "hashtags":     hashtags,
-            "resultsLimit": max_items,
-        })
+        search_query = _llm_search_query(query)
+        headline_kws = _extract_keywords(query, max_words=5)
+        llm_kws = [w.strip('"\'') for w in re.findall(r'\b[a-zA-Z]{3,}\b', search_query)
+                    if w.lower() not in _STOP_WORDS]
+        all_keywords = list(dict.fromkeys(headline_kws + llm_kws))
+        logger.info("Twitter search query: %r (keywords: %s)", search_query, all_keywords)
+
+        raw_results = _search_ddg(search_query, max_results=max_items * 3)
 
         posts = []
-        for post in raw[:max_items]:
-            if "error" in post or not post.get("url"):
+        seen_ids = set()
+
+        for r in raw_results:
+            href = r.get("href", "") or r.get("link", "")
+            m = re.match(r'https?://(?:twitter\.com|x\.com)/(\w+)/status/(\d+)', href)
+            if not m:
                 continue
 
-            comments = [
-                {
-                    "author": c.get("ownerUsername") or "",
-                    "text":   c.get("text") or "",
-                    "likes":  c.get("likesCount") or 0,
-                }
-                for c in (post.get("latestComments") or [])[:5]
-            ]
+            username = m.group(1)
+            tweet_id = m.group(2)
+
+            if tweet_id in seen_ids:
+                continue
+            seen_ids.add(tweet_id)
+
+            # Skip Twitter system accounts
+            if username.lower() in ('i', 'search', 'explore', 'home', 'settings', 'x'):
+                continue
+
+            snippet = r.get("body", "") or r.get("title", "") or ""
+
+            if not _tweet_is_relevant(snippet, all_keywords):
+                continue
+
+            tweet_url = f"https://x.com/{username}/status/{tweet_id}"
+
+            # Try to get full text via oEmbed
+            oembed = _fetch_oembed(tweet_url)
+            if oembed and oembed.get("text"):
+                text = oembed["text"]
+                if oembed.get("author"):
+                    username = oembed["author"]
+            else:
+                text = snippet
 
             posts.append({
-                "platform":       "instagram",
-                "post_url":       post.get("url") or "",
-                "author":         post.get("ownerUsername") or "Unknown",
-                "caption":        (post.get("caption") or "")[:300],
-                "likes":          post.get("likesCount") or 0,
-                "comments_count": post.get("commentsCount") or 0,
-                "comments":       comments,
-                "timestamp":      post.get("timestamp") or "",
-                "image_url":      post.get("displayUrl") or "",
+                "platform":  "twitter",
+                "post_url":  tweet_url,
+                "author":    username,
+                "username":  username,
+                "text":      text,
+                "likes":     0,
+                "reposts":   0,
+                "replies":   0,
+                "timestamp": "",
             })
+
+            if len(posts) >= max_items:
+                break
+
+        logger.info("Twitter: %d relevant tweets found via DuckDuckGo", len(posts))
         return posts
+
     except Exception as e:
-        logger.error("Instagram scrape error: %s", e)
+        logger.error("Twitter scrape error: %s", e)
         return []

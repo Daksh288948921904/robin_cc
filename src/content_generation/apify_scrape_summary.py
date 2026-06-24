@@ -10,12 +10,9 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
-def _groq_client():
-    from src.content_generation.groq_pool import get_groq_client
-    client = get_groq_client()
-    if client is None:
-        raise RuntimeError("No GROQ_API_KEY* found in environment")
-    return client
+def _groq_completion(**kwargs):
+    from src.utils.groq_pool import groq_completion
+    return groq_completion(**kwargs)
 
 
 def generate_social_summary(platform: str, posts: list, headline: str) -> dict:
@@ -38,7 +35,6 @@ def generate_social_summary(platform: str, posts: list, headline: str) -> dict:
             "generated_at": datetime.utcnow().isoformat(),
         }
 
-    client = _groq_client()
     model  = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     if platform == "twitter":
@@ -51,9 +47,24 @@ def generate_social_summary(platform: str, posts: list, headline: str) -> dict:
         prompt = (
             f'News headline: "{headline}"\n\n'
             f"Twitter/X reactions ({len(posts)} tweets):\n{snippets}\n\n"
-            "Write a 200–250 word analysis of how Twitter/X users are reacting to this news.\n"
-            "Cover: overall sentiment, dominant narratives, notable reactions, and key debates.\n"
-            "Use markdown headings and bullet points where helpful. No preamble — start directly."
+            "Write a 300–400 word in-depth analysis of how netizens on Twitter/X are reacting "
+            "to this news. Structure it as follows:\n\n"
+            "1. **Sentiment Overview** — Start with the dominant emotional tone. Classify the "
+            "overall sentiment clearly (e.g. angry, excited, hopeful, disappointed, divided, "
+            "sarcastic, celebratory, anxious, indifferent). If sentiment is mixed, state the "
+            "approximate split (e.g. '~60% supportive, ~30% critical, ~10% mocking').\n\n"
+            "2. **Key Perspectives** — Cover EVERY distinct viewpoint found in the tweets. "
+            "Group similar opinions together. Include supporters, critics, skeptics, those "
+            "making jokes/memes, and any neutral or analytical takes. Do not skip minority "
+            "opinions — even a single dissenting voice matters.\n\n"
+            "3. **Notable Reactions** — Highlight the most impactful tweets (highest engagement "
+            "or most thought-provoking). Quote or closely paraphrase 2-3 standout reactions "
+            "with attribution (@username).\n\n"
+            "4. **Public Mood** — End with a one-line summary of the overall netizen mood "
+            "(e.g. 'Netizens are largely furious and demanding accountability' or "
+            "'The reaction is celebratory with widespread national pride').\n\n"
+            "Use markdown formatting with headings and bullet points. "
+            "No preamble — start directly with the sentiment overview."
         )
     else:
         snippets = "\n\n".join(
@@ -71,7 +82,7 @@ def generate_social_summary(platform: str, posts: list, headline: str) -> dict:
         )
 
     try:
-        resp = client.chat.completions.create(
+        resp = _groq_completion(
             model=model,
             messages=[
                 {
@@ -84,7 +95,7 @@ def generate_social_summary(platform: str, posts: list, headline: str) -> dict:
                 {"role": "user", "content": prompt},
             ],
             temperature=0.4,
-            max_tokens=600,
+            max_tokens=1000,
         )
         summary_text = resp.choices[0].message.content.strip()
     except Exception as e:

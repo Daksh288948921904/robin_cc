@@ -443,6 +443,36 @@ def upload_to_hocalwire(
 
     # Convert markdown to HTML for better CMS display
     formatted_story = format_article_for_cms(story)
+
+    # Append selected tweets as HTML block
+    selected_tweets = article.get('selected_tweets') or []
+    if selected_tweets:
+        tweets_html = (
+            '<div style="margin-top:28px;padding:18px 20px;border-radius:10px;'
+            'background:#f8f9fa;border:1px solid #e2e8f0">'
+            '<h3 style="margin:0 0 14px;font-size:16px;font-weight:700;'
+            'color:#1a202c;display:flex;align-items:center;gap:8px">'
+            '<span style="font-size:18px">𝕏</span> Social Reactions</h3>'
+        )
+        for tw in selected_tweets:
+            username = tw.get('username') or tw.get('author') or 'unknown'
+            text = (tw.get('text') or '').replace('<', '&lt;').replace('>', '&gt;')
+            url = tw.get('post_url') or ''
+            tweets_html += (
+                '<div style="margin-bottom:12px;padding:12px 14px;border-radius:8px;'
+                'background:#fff;border:1px solid #edf2f7">'
+                f'<div style="font-size:13px;font-weight:600;color:#1da1f2;margin-bottom:4px">'
+                f'{"<a href=&quot;" + url + "&quot; target=&quot;_blank&quot; style=&quot;color:#1da1f2;text-decoration:none&quot;>" if url else ""}'
+                f'@{username}'
+                f'{"</a>" if url else ""}'
+                f'</div>'
+                f'<p style="margin:0;font-size:14px;line-height:1.5;color:#2d3748">{text}</p>'
+                '</div>'
+            )
+        tweets_html += '</div>'
+        formatted_story += tweets_html
+        logger.info("Appended %d selected tweets to story HTML", len(selected_tweets))
+
     logger.info(f"Story HTML (first 200 chars): {formatted_story[:200]}")
 
     # Extract intelligent location and category from article content

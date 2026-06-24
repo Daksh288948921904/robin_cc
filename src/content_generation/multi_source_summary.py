@@ -146,7 +146,7 @@ RIGHT: "The Federal Reserve is expected to raise interest rates by 50 basis poin
 
 ━━━ OUTPUT FORMAT (follow exactly — do not add or remove any field) ━━━
 
-TITLE: <your ORIGINAL headline — 80-90 characters, must be a COMPLETE thought/sentence, must differ from every banned headline above>
+TITLE: <your ORIGINAL headline — 85-100 characters, must be a COMPLETE thought/sentence that does NOT end abruptly or mid-phrase, must differ from every banned headline above>
 SUBTITLE: <COMPLETE sentence, exactly 160–180 characters, names key actor + specific consequence — see SUBTITLE RULE above>
 BYLINE: robin cc | {today}
 LOCATION: <most specific city or country dateline you can derive from the content>
@@ -212,7 +212,7 @@ def generate_summary(
         ],
         model=model,
         temperature=0.4,
-        max_tokens=2048,
+        max_tokens=4096,
     )
     raw_text = response.choices[0].message.content.strip()
     return _parse_response(raw_text, main_article, coverage)
