@@ -277,20 +277,10 @@ def _parse_response(raw: str, main_article: Dict, coverage: List[Dict]) -> Dict:
             else:
                 first_sent = re.split(r'(?<=[.!?])\s', raw.lstrip(), maxsplit=1)
                 if first_sent and len(first_sent[0].split()) >= 4:
-                    title = first_sent[0][:90].rstrip('.')
+                    title = first_sent[0]
 
-    # Enforce minimum title length — short titles lose context
-    if len(title) < 60:
-        raw_subtitle = subtitle_match.group(1).strip() if subtitle_match else ""
-        if raw_subtitle and len(raw_subtitle) > 20:
-            combined = f"{title}: {raw_subtitle}"
-            if len(combined) > 100:
-                cut = combined[:100].rsplit(' ', 1)[0].rstrip('.,;:—–-')
-                title = cut
-            else:
-                title = combined
-        elif not title:
-            title = main_article.get("heading") or "News Briefing"
+    if not title:
+        title = main_article.get("heading") or "News Briefing"
     logger.info("Parsed title: %s", title)
 
     subtitle = subtitle_match.group(1).strip() if subtitle_match else ""
