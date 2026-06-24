@@ -37,6 +37,8 @@ _GN_KEY = os.environ.get('GLOBAL_NEWS_API_KEY', '')
 def _push_to_global_news(article: dict, feed_id: str = '') -> str:
     """Push article to Global News and return the GN UUID (empty string on failure)."""
     if not _GN_URL or not _GN_KEY:
+        with open('/tmp/robin_publish_debug.log', 'a') as _dbg:
+            _dbg.write(f"GN SKIP: no URL ({bool(_GN_URL)}) or KEY ({bool(_GN_KEY)})\n")
         return ''
     try:
         article['hocalwire_id'] = feed_id
@@ -46,9 +48,13 @@ def _push_to_global_news(article: dict, feed_id: str = '') -> str:
             headers={'X-API-Key': _GN_KEY},
             timeout=8,
         )
+        with open('/tmp/robin_publish_debug.log', 'a') as _dbg:
+            _dbg.write(f"GN PUSH: status={r.status_code} url={_GN_URL} tweets={len(article.get('selected_tweets', []))} resp={r.text[:200]}\n")
         if r.ok:
             return r.json().get('id', '')
     except Exception as _e:
+        with open('/tmp/robin_publish_debug.log', 'a') as _dbg:
+            _dbg.write(f"GN ERROR: {_e}\n")
         logger.warning('Global News push failed: %s', _e)
     return ''
 
