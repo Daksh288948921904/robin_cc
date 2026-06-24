@@ -1914,15 +1914,12 @@ function renderSocialSection(platform, data, secEl, outerEl, _realIdx) {
       </div>
     </div>`;
 
-  // Auto-select top 3 tweets (already sorted by relevance from backend)
+  // Highlight top 3 tweets with golden styling
   if (isTw && posts.length > 0) {
-    const autoSelect = Math.min(3, posts.length);
-    for (let i = 0; i < autoSelect; i++) {
-      const cb = document.querySelector(`#soc-post-${platform}-${i} .soc-select-cb`);
-      if (cb && !cb.checked) {
-        cb.checked = true;
-        toggleTweetSelect(cb, _realIdx);
-      }
+    const topCount = Math.min(3, posts.length);
+    for (let i = 0; i < topCount; i++) {
+      const el = document.getElementById(`soc-post-${platform}-${i}`);
+      if (el) el.classList.add('soc-post-top');
     }
   }
 }

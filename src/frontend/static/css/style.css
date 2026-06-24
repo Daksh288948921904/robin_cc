@@ -2065,6 +2065,19 @@ a{color:inherit;text-decoration:none}
   border-color:rgba(99,102,241,.5);
   background:rgba(99,102,241,.06);
 }
+.soc-post-top{
+  border-color:rgba(212,175,55,.5);
+  background:linear-gradient(135deg,rgba(212,175,55,.08),rgba(255,215,0,.04));
+  box-shadow:0 0 8px rgba(212,175,55,.12);
+  position:relative;
+}
+.soc-post-top::before{
+  content:'★ Top';
+  position:absolute;top:8px;right:10px;
+  font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:#d4af37;background:rgba(212,175,55,.12);
+  padding:2px 7px;border-radius:4px;
+}
 .soc-select-counter{
   font-size:11px;color:var(--ink3);
   transition:color .15s;
