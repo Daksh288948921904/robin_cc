@@ -90,6 +90,12 @@ def _tweet_is_relevant(tweet_text: str, keywords: list[str], min_matches: int = 
     return matches >= min(min_matches, len(keywords))
 
 
+def _relevance_score(tweet_text: str, keywords: list[str]) -> int:
+    """Higher score = more keyword matches = more relevant."""
+    text_lower = tweet_text.lower()
+    return sum(1 for kw in keywords if kw.lower() in text_lower)
+
+
 def _fetch_oembed(tweet_url: str) -> dict | None:
     """Fetch full tweet text via Twitter's free oEmbed API."""
     try:
@@ -196,6 +202,8 @@ def scrape_twitter(query: str, max_items: int = 10) -> list:
             if len(posts) >= max_items:
                 break
 
+        # Sort by relevance — tweets matching more keywords appear first
+        posts.sort(key=lambda p: _relevance_score(p['text'], all_keywords), reverse=True)
         logger.info("Twitter: %d relevant tweets found via DuckDuckGo", len(posts))
         return posts
 
