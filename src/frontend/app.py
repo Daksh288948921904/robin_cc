@@ -1573,6 +1573,11 @@ def _autogen_single(idx: int):
 
         # 2. RAG synthesis
         if key not in SUMMARIES:
+            with _rag_lock:
+                if _rag_state.get(key, {}).get('running'):
+                    pass  # already running from manual trigger
+                else:
+                    _rag_state[key] = {'running': True, 'done': False, 'error': None}
             try:
                 coverage = COVERAGES.get(key, [])
                 cluster = [article] + [{k: v for k, v in art.items() if k != 'similarity'} for art in coverage[:9]]

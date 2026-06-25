@@ -3417,5 +3417,5 @@ body::before {
 /* ── Auto-gen badge on cards ── */
 .autogen-badge{position:absolute;bottom:10px;left:10px;display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:#a5b4fc;background:rgba(15,15,25,.85);backdrop-filter:blur(6px);padding:4px 10px;border-radius:6px;border:1px solid rgba(99,102,241,.3);z-index:2}
 .autogen-spinner{width:10px;height:10px;border:2px solid rgba(99,102,241,.3);border-top-color:#a5b4fc;border-radius:50%;animation:spin .6s linear infinite}
-.autogen-done .card-media::after{content:'✓ Ready';position:absolute;top:10px;right:10px;font-size:9px;font-weight:700;color:#34d399;background:rgba(15,15,25,.85);padding:3px 8px;border-radius:5px;letter-spacing:.5px}
+.autogen-ready{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;color:#34d399;background:rgba(52,211,153,.1);padding:2px 7px;border-radius:4px;margin-left:6px;letter-spacing:.3px}
 @keyframes spin{to{transform:rotate(360deg)}}

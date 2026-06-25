@@ -2263,11 +2263,19 @@ async function pollAutoGenStatus() {
       const st = states[String(a._serverIdx)];
       const card = document.querySelector(`.card[onclick="openReader(${i})"]`);
       if (!card) return;
+      const dateEl = card.querySelector('.card-date');
+      if (!dateEl) return;
       let badge = card.querySelector('.autogen-badge');
+      let readyBadge = card.querySelector('.autogen-ready');
       if (st === 'done') {
         if (badge) badge.remove();
-        if (!card.classList.contains('autogen-done')) card.classList.add('autogen-done');
-      } else if (st === 'running') {
+        if (!readyBadge) {
+          readyBadge = document.createElement('span');
+          readyBadge.className = 'autogen-ready';
+          readyBadge.textContent = '✓ Ready';
+          dateEl.parentNode.appendChild(readyBadge);
+        }
+      } else if (st === 'running' || st === 'pending') {
         if (!badge) {
           badge = document.createElement('div');
           badge.className = 'autogen-badge';
