@@ -825,6 +825,10 @@ async function generateSummaryRag(realIdx, genToken) {
       $('summary-section').innerHTML = `<div class="coverage-empty">Error: ${esc(startData.message||'Failed to start')}</div>`;
       return;
     }
+    if (startData.status === 'done' && startData.summary) {
+      renderSummary(startData.summary, realIdx);
+      return;
+    }
 
     // Poll until done
     let elapsed = 0;
@@ -2219,7 +2223,7 @@ function goToPage(p) {
 
 // ── Auto-generation ─────────────────────────────────────────
 function triggerAutoGenForPage() {
-  const indices = SHOWN.map(a => a._serverIdx).filter(i => i !== undefined);
+  const indices = SHOWN.slice(0, 10).map(a => a._serverIdx).filter(i => i !== undefined);
   if (!indices.length) return;
 
   fetch('/api/auto-generate', {
