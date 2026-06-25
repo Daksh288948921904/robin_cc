@@ -1598,7 +1598,8 @@ def _autogen_single(idx: int):
                 from src.content_generation.apify_scrape_summary import generate_social_summary
                 tw_posts = scrape_twitter(headline, max_items=10)
                 twitter_data = generate_social_summary('twitter', tw_posts, headline)
-                SOCIALS[key] = {'twitter': twitter_data}
+                if tw_posts:
+                    SOCIALS[key] = {'twitter': twitter_data}
             except Exception as e:
                 logger.warning("Autogen social %s: %s", key, e)
 
