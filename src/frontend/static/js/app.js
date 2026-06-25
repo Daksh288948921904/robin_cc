@@ -2183,7 +2183,6 @@ async function loadArticles() {
       buildTicker(ALL);
       PAGE = 1;
       applyFilters();
-      triggerAutoGenForPage();
     }
   } catch(e) { console.error(e); }
 }
@@ -2217,7 +2216,6 @@ function renderPagination(total, totalPages) {
 function goToPage(p) {
   PAGE = p;
   applyFilters();
-  triggerAutoGenForPage();
   window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
