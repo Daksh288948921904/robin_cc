@@ -3405,3 +3405,17 @@ body::before {
 .chat-send-btn svg{transform:scaleX(-1)}
 .chat-send-btn:hover:not(:disabled){background:rgba(99,102,241,.35)}
 .chat-send-btn:disabled{opacity:.4;cursor:default}
+
+/* ── Pagination ── */
+.pagination{display:flex;align-items:center;justify-content:center;gap:6px;padding:24px 16px 32px;flex-wrap:wrap}
+.page-btn{background:var(--glass);border:1px solid var(--border);color:var(--ink2);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s}
+.page-btn:hover{background:rgba(99,102,241,.15);border-color:rgba(99,102,241,.4);color:#a5b4fc}
+.page-btn.active{background:rgba(99,102,241,.25);border-color:rgba(99,102,241,.5);color:#c7d2fe;font-weight:700}
+.page-dots{color:var(--ink4);font-size:13px;padding:0 4px}
+.page-info{color:var(--ink4);font-size:11px;margin-left:12px}
+
+/* ── Auto-gen badge on cards ── */
+.autogen-badge{position:absolute;bottom:10px;left:10px;display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:#a5b4fc;background:rgba(15,15,25,.85);backdrop-filter:blur(6px);padding:4px 10px;border-radius:6px;border:1px solid rgba(99,102,241,.3);z-index:2}
+.autogen-spinner{width:10px;height:10px;border:2px solid rgba(99,102,241,.3);border-top-color:#a5b4fc;border-radius:50%;animation:spin .6s linear infinite}
+.autogen-done .card-media::after{content:'✓ Ready';position:absolute;top:10px;right:10px;font-size:9px;font-weight:700;color:#34d399;background:rgba(15,15,25,.85);padding:3px 8px;border-radius:5px;letter-spacing:.5px}
+@keyframes spin{to{transform:rotate(360deg)}}

@@ -25,6 +25,9 @@ let _hocalwirePreviewData = null; // stashed between preview fetch and confirm
 let _selectedTweets      = {};   // realIdx → [tweet objects]
 let LEAD_STORY_IDX   = null;  // server_idx of article currently set as lead story on Global News
 let _readerGenToken  = 0;     // incremented on open/close; stale async tasks bail when it changes
+let PAGE             = 1;     // current pagination page
+const PER_PAGE       = 50;    // articles per page
+let _autoGenPollId   = null;  // interval ID for auto-gen status polling
 
 // ── DOM ──────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -245,8 +248,13 @@ function applyFilters() {
   else if (SORT==='old')  list=[...list].sort((a,b)=>new Date(a.publish_date||0)-new Date(b.publish_date||0));
   else if (SORT==='long') list=[...list].sort((a,b)=>wc(b)-wc(a));
 
-  SHOWN = list;
+  // Paginate
+  const totalPages = Math.ceil(list.length / PER_PAGE);
+  if (PAGE > totalPages) PAGE = totalPages || 1;
+  const start = (PAGE - 1) * PER_PAGE;
+  SHOWN = list.slice(start, start + PER_PAGE);
   renderFeed();
+  renderPagination(list.length, totalPages);
 }
 
 // ── Render ───────────────────────────────────────────────────
@@ -2166,15 +2174,111 @@ async function loadArticles() {
   try {
     const data = await fetch('/api/articles').then(r=>r.json());
     if (data.status==='success') {
-      // Stamp each article with its stable server-side index so openReader
-      // never has to search for it via indexOf (which can mis-map after a
-      // re-sort or concurrent load).
       ALL = (data.articles||[]).map((a, i) => { a._serverIdx = i; return a; });
       refreshMeta(ALL);
       buildTicker(ALL);
+      PAGE = 1;
       applyFilters();
+      triggerAutoGenForPage();
     }
   } catch(e) { console.error(e); }
+}
+
+// ── Pagination ──────────────────────────────────────────────
+function renderPagination(total, totalPages) {
+  let el = document.getElementById('pagination');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'pagination';
+    el.className = 'pagination';
+    const feedArea = document.getElementById('feed-area');
+    if (feedArea) feedArea.appendChild(el);
+  }
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  let html = '';
+  if (PAGE > 1) html += `<button class="page-btn" onclick="goToPage(${PAGE-1})">← Prev</button>`;
+  for (let p = 1; p <= totalPages; p++) {
+    if (totalPages > 7 && Math.abs(p - PAGE) > 2 && p !== 1 && p !== totalPages) {
+      if (p === 2 || p === totalPages - 1) html += `<span class="page-dots">…</span>`;
+      continue;
+    }
+    html += `<button class="page-btn${p===PAGE?' active':''}" onclick="goToPage(${p})">${p}</button>`;
+  }
+  if (PAGE < totalPages) html += `<button class="page-btn" onclick="goToPage(${PAGE+1})">Next →</button>`;
+  html += `<span class="page-info">${total} articles</span>`;
+  el.innerHTML = html;
+}
+
+function goToPage(p) {
+  PAGE = p;
+  applyFilters();
+  triggerAutoGenForPage();
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// ── Auto-generation ─────────────────────────────────────────
+function triggerAutoGenForPage() {
+  const indices = SHOWN.map(a => a._serverIdx).filter(i => i !== undefined);
+  if (!indices.length) return;
+
+  fetch('/api/auto-generate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({indices}),
+  }).then(r => r.json()).then(data => {
+    if (data.count > 0) {
+      toast('info', `Generating content for ${data.count} articles…`);
+      startAutoGenPoll();
+    }
+  }).catch(e => console.error('Auto-gen trigger failed:', e));
+}
+
+function startAutoGenPoll() {
+  if (_autoGenPollId) clearInterval(_autoGenPollId);
+  _autoGenPollId = setInterval(pollAutoGenStatus, 3000);
+}
+
+async function pollAutoGenStatus() {
+  try {
+    const data = await fetch('/api/auto-generate/status').then(r => r.json());
+    if (data.status !== 'success') return;
+    const states = data.states;
+
+    let running = 0, done = 0, total = 0;
+    for (const idx of SHOWN.map(a => a._serverIdx)) {
+      const st = states[String(idx)];
+      if (!st) continue;
+      total++;
+      if (st === 'done') done++;
+      else if (st === 'running' || st === 'pending') running++;
+    }
+
+    // Update cards with generation status
+    SHOWN.forEach((a, i) => {
+      const st = states[String(a._serverIdx)];
+      const card = document.querySelector(`.card[onclick="openReader(${i})"]`);
+      if (!card) return;
+      let badge = card.querySelector('.autogen-badge');
+      if (st === 'done') {
+        if (badge) badge.remove();
+        if (!card.classList.contains('autogen-done')) card.classList.add('autogen-done');
+      } else if (st === 'running') {
+        if (!badge) {
+          badge = document.createElement('div');
+          badge.className = 'autogen-badge';
+          card.appendChild(badge);
+        }
+        badge.innerHTML = '<span class="autogen-spinner"></span> Generating…';
+      }
+    });
+
+    if (running === 0 && total > 0) {
+      clearInterval(_autoGenPollId);
+      _autoGenPollId = null;
+      if (done > 0) toast('ok', `${done} articles ready`);
+    }
+  } catch(e) { console.error('Auto-gen poll error:', e); }
 }
 
 async function loadSaved() {

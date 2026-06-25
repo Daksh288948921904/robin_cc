@@ -191,6 +191,9 @@ AI_IMAGE_PUBLIC: dict = {}
 ACTIVITY:        dict = {}
 
 _rag_state: dict = {}  # {str(idx): {'running': bool, 'done': bool, 'error': str|None}}
+_autogen_state: dict = {}  # {str(idx): 'pending'|'running'|'done'|'error'}
+_autogen_lock = threading.Lock()
+_autogen_sem  = threading.Semaphore(3)  # max 3 concurrent
 
 AI_IMAGES_STATIC_DIR = Path(__file__).parent / 'static' / 'ai_images'
 
@@ -1536,6 +1539,152 @@ def _persist_articles():
 def load_articles(articles_list):
     global SCRAPED_ARTICLES
     SCRAPED_ARTICLES = articles_list
+
+
+# ── Auto-generation worker ──────────────────────────────────
+def _autogen_single(idx: int):
+    """Run full generation pipeline for one article: coverage → RAG → social → news-check → image."""
+    key = str(idx)
+    with _autogen_lock:
+        _autogen_state[key] = 'running'
+
+    try:
+        article = SCRAPED_ARTICLES[idx]
+        headline = article.get('heading', '')
+
+        # 1. Coverage
+        if key not in COVERAGES:
+            try:
+                from src.utils.similarity import find_similar
+                results = find_similar(article, SCRAPED_ARTICLES, threshold=0.35, max_results=10)
+                COVERAGES[key] = [{**art, 'similarity': score} for art, score in results]
+            except Exception as e:
+                logger.warning("Autogen coverage %s: %s", key, e)
+                COVERAGES[key] = []
+
+        # 2. RAG synthesis
+        if key not in SUMMARIES:
+            try:
+                coverage = COVERAGES.get(key, [])
+                cluster = [article] + [{k: v for k, v in art.items() if k != 'similarity'} for art in coverage[:9]]
+                trend = {
+                    'topic': headline or 'News Update',
+                    'articles': cluster,
+                    'keywords': article.get('keywords', []),
+                    'session_id': '',
+                }
+                _run_rag_generate(idx, trend, cluster)
+            except Exception as e:
+                logger.warning("Autogen RAG %s: %s", key, e)
+
+        # 3. Social/tweets
+        if key not in SOCIALS:
+            try:
+                from src.scrapers.apify_scrape import scrape_twitter
+                from src.content_generation.apify_scrape_summary import generate_social_summary
+                tw_posts = scrape_twitter(headline, max_items=10)
+                twitter_data = generate_social_summary('twitter', tw_posts, headline)
+                SOCIALS[key] = {'twitter': twitter_data}
+            except Exception as e:
+                logger.warning("Autogen social %s: %s", key, e)
+
+        # 4. News check
+        try:
+            from src.content_generation.news_checker import analyze_article
+            cached = SUMMARIES.get(key)
+            text = (cached.get('body') if cached else None) or article.get('story', '')
+            title = (cached.get('title') if cached else None) or headline
+            nc = analyze_article(title, text, article.get('source_name', ''), SCRAPED_ARTICLES, idx)
+            article['news_check'] = nc
+        except Exception as e:
+            logger.warning("Autogen news-check %s: %s", key, e)
+
+        # 5. AI image
+        if key not in AI_IMAGES:
+            try:
+                import hashlib
+                import requests as _req
+                from src.image_generation.image_creator import build_image_prompt
+
+                AI_IMAGES_STATIC_DIR.mkdir(parents=True, exist_ok=True)
+                try:
+                    from src.image_generation.prompt_generator import generate_groq_image_prompt
+                    prompt = generate_groq_image_prompt(article) or build_image_prompt(article)
+                except Exception:
+                    prompt = build_image_prompt(article)
+
+                together_key = os.environ.get('TOGETHER_API_KEY', '').strip()
+                if together_key:
+                    resp = _req.post(
+                        'https://api.together.xyz/v1/images/generations',
+                        headers={'Authorization': f'Bearer {together_key}', 'Content-Type': 'application/json'},
+                        json={'model': 'black-forest-labs/FLUX.1-schnell', 'prompt': prompt,
+                              'n': 1, 'steps': 4, 'response_format': 'b64_json'},
+                        timeout=120,
+                    )
+                    if resp.status_code == 200:
+                        import base64
+                        image_bytes = base64.b64decode(resp.json()['data'][0]['b64_json'])
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        title_hash = hashlib.md5(headline.encode()).hexdigest()[:8]
+                        fname = f"aiimg_{timestamp}_{title_hash}.jpg"
+                        fpath = AI_IMAGES_STATIC_DIR / fname
+                        with open(fpath, 'wb') as f:
+                            f.write(image_bytes)
+                        local_url = f"/static/ai_images/{fname}"
+                        AI_IMAGES[key] = local_url
+                        public_url = _upload_to_catbox(fpath) or local_url
+                        AI_IMAGE_PUBLIC[key] = public_url
+            except Exception as e:
+                logger.warning("Autogen image %s: %s", key, e)
+
+        with _autogen_lock:
+            _autogen_state[key] = 'done'
+        logger.info("Autogen complete for article %s: %s", key, headline[:60])
+
+    except Exception as e:
+        with _autogen_lock:
+            _autogen_state[key] = 'error'
+        logger.error("Autogen failed for %s: %s", key, e)
+
+
+def _autogen_worker(idx: int):
+    """Wraps _autogen_single with semaphore for concurrency control."""
+    with _autogen_sem:
+        _autogen_single(idx)
+
+
+@app.post('/api/auto-generate')
+async def auto_generate(request: Request):
+    """Start auto-generation for a batch of article indices."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    indices = body.get('indices', [])
+    if not indices:
+        return JSONResponse({'status': 'error', 'message': 'No indices provided'}, status_code=400)
+
+    started = []
+    for idx in indices:
+        if not (0 <= idx < len(SCRAPED_ARTICLES)):
+            continue
+        key = str(idx)
+        with _autogen_lock:
+            if _autogen_state.get(key) in ('running', 'done'):
+                continue
+            _autogen_state[key] = 'pending'
+        threading.Thread(target=_autogen_worker, args=(idx,), daemon=True).start()
+        started.append(idx)
+
+    return JSONResponse({'status': 'started', 'count': len(started), 'indices': started})
+
+
+@app.get('/api/auto-generate/status')
+async def auto_generate_status(request: Request):
+    """Return generation status for all articles."""
+    with _autogen_lock:
+        return JSONResponse({'status': 'success', 'states': dict(_autogen_state)})
 
 
 if __name__ == '__main__':
