@@ -31,6 +31,10 @@ let _autoGenPollId   = null;  // interval ID for auto-gen status polling
 let IS_ADMIN         = false;
 let CURATED_URLS     = new Set();
 
+function articleByRealIdx(realIdx) {
+  return ALL.find(a => a._serverIdx === realIdx);
+}
+
 // ── DOM ──────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const sidebar    = $('sidebar');
@@ -1081,9 +1085,10 @@ async function confirmPublishToHocalwire() {
       if (pb) pb.disabled = true;
 
       // Mark article in local data so the feed badge appears immediately
-      if (ALL[realIdx]) {
-        ALL[realIdx].upload_status = 'uploaded';
-        if (feedId) ALL[realIdx].hocalwire_feed_id = feedId;
+      const localArt = articleByRealIdx(realIdx);
+      if (localArt) {
+        localArt.upload_status = 'uploaded';
+        if (feedId) localArt.hocalwire_feed_id = feedId;
       }
       renderFeed();
 
@@ -1195,7 +1200,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const idx = CURRENT_REAL_IDX;
     if (idx < 0) return;
     const val = el.textContent.trim();
-    if (ALL[idx]) ALL[idx][field] = val;
+    const _a = articleByRealIdx(idx);
+    if (_a) _a[field] = val;
     fetch(`/api/articles/${idx}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -2446,7 +2452,7 @@ function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 // ── Activity ──────────────────────────────────────────────────
 function recordActivity(realIdx, patch) {
   if (realIdx < 0) return;
-  const a = ALL[realIdx];
+  const a = articleByRealIdx(realIdx);
   const existing = ACTIVITY_MAP[realIdx] || {
     headline:             a ? (a.heading || 'Untitled') : 'Unknown',
     source_name:          a ? (a.source_name || '—')    : '—',
