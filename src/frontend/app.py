@@ -82,6 +82,7 @@ def _auto_load_articles():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _auto_load_articles()
+    _load_curated()
     yield
 
 
@@ -98,6 +99,38 @@ _USERS = {
         'scrypt:32768:8:1$q6pdvdgyB5Cn7UMw$35229e09e483cdf1367be4f05c895d11cdfdb71538c150eba201cc89a23d8db5940e794747c1c386dc11d9e62f6070f7ce4539745f4fbbb0e0b1b1b257bbaac0'
     ),
 }
+
+_ADMIN_EMAILS = {'Rohit@Robin.cc'}
+
+
+def _is_admin(request: Request) -> bool:
+    return request.session.get('user', '') in _ADMIN_EMAILS
+
+
+# ── Curation storage ────────────────────────────────────────────
+_CURATED_URLS: set = set()
+_CURATED_FILE = PROJECT_ROOT / 'output' / 'curated.json'
+
+
+def _load_curated():
+    global _CURATED_URLS
+    try:
+        if _CURATED_FILE.exists():
+            with open(_CURATED_FILE, 'r') as f:
+                _CURATED_URLS = set(json.load(f))
+            print(f'[Startup] Loaded {len(_CURATED_URLS)} curated URLs')
+    except Exception as e:
+        print(f'[Startup] Curated load failed: {e}')
+
+
+def _save_curated():
+    try:
+        _CURATED_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_CURATED_FILE, 'w') as f:
+            json.dump(sorted(_CURATED_URLS), f)
+    except Exception as e:
+        print(f'[Curate] Failed to save curated list: {e}')
+
 
 _log_level = getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO)
 logging.basicConfig(
@@ -165,6 +198,7 @@ async def login_post(request: Request, username: str = Form(''), password: str =
     pw_hash = _USERS.get(username.strip())
     if pw_hash and check_password_hash(pw_hash, password):
         request.session['authenticated'] = True
+        request.session['user'] = username.strip()
         next_url = request.query_params.get('next') or '/'
         return RedirectResponse(url=next_url, status_code=302)
     return templates.TemplateResponse(request, 'login.html', {'error': 'Invalid username or password.'})
@@ -174,6 +208,38 @@ async def login_post(request: Request, username: str = Form(''), password: str =
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url='/login', status_code=302)
+
+
+# ── Curation API ─────────────────────────────────────────────────
+@app.get('/api/user-info')
+async def user_info(request: Request):
+    user = request.session.get('user', '')
+    return JSONResponse({'user': user, 'is_admin': user in _ADMIN_EMAILS})
+
+
+@app.post('/api/curate')
+async def curate_article(request: Request):
+    if not _is_admin(request):
+        return JSONResponse({'status': 'error', 'message': 'Forbidden'}, status_code=403)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({'status': 'error', 'message': 'Invalid JSON'}, status_code=400)
+    source_url = (body.get('source_url') or '').strip()
+    curated = body.get('curated', True)
+    if not source_url:
+        return JSONResponse({'status': 'error', 'message': 'source_url required'}, status_code=400)
+    if curated:
+        _CURATED_URLS.add(source_url)
+    else:
+        _CURATED_URLS.discard(source_url)
+    _save_curated()
+    return JSONResponse({'status': 'success', 'curated': curated, 'total_curated': len(_CURATED_URLS)})
+
+
+@app.get('/api/curated')
+async def get_curated(request: Request):
+    return JSONResponse({'status': 'success', 'curated_urls': sorted(_CURATED_URLS), 'count': len(_CURATED_URLS)})
 
 
 # ── Shared state ─────────────────────────────────────────────────
@@ -401,10 +467,19 @@ async def index(request: Request):
 
 @app.get('/api/articles')
 async def get_articles(request: Request):
+    admin = _is_admin(request)
+    result = []
+    for real_idx, a in enumerate(SCRAPED_ARTICLES):
+        if not admin and a.get('source_url') not in _CURATED_URLS:
+            continue
+        entry = dict(a)
+        entry['_server_idx'] = real_idx
+        result.append(entry)
     return JSONResponse({
         'status': 'success',
-        'count': len(SCRAPED_ARTICLES),
-        'articles': SCRAPED_ARTICLES,
+        'count': len(result),
+        'articles': result,
+        'is_admin': admin,
     })
 
 

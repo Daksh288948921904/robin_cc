@@ -28,6 +28,8 @@ let _readerGenToken  = 0;     // incremented on open/close; stale async tasks ba
 let PAGE             = 1;     // current pagination page
 const PER_PAGE       = 50;    // articles per page
 let _autoGenPollId   = null;  // interval ID for auto-gen status polling
+let IS_ADMIN         = false;
+let CURATED_URLS     = new Set();
 
 // ── DOM ──────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -306,9 +308,15 @@ function cardHTML(a, i) {
       </div>`;
   }
 
+  const curateBtn = IS_ADMIN ? `<button class="card-curate-btn${CURATED_URLS.has(a.source_url) ? ' is-curated' : ''}"
+    data-source-url="${esc(a.source_url || '')}"
+    onclick="toggleCurate(event, this)"
+    title="${CURATED_URLS.has(a.source_url) ? 'Remove from curated feed' : 'Add to curated feed'}">${CURATED_URLS.has(a.source_url) ? '★' : '☆'}</button>` : '';
+
   return `<article class="card${isHero?' card-hero':''}${a.upload_status==='uploaded'?' is-published':''}" data-cat="${cat.key}" onclick="openReader(${i})">
     ${media}
     ${hocalwireBadge(a)}
+    ${curateBtn}
     <div class="card-badges">
       <span class="card-cat-badge ${cat.cls}">${cat.key}</span>
       ${langBadge(a)}
@@ -338,6 +346,11 @@ function listCardHTML(a, i) {
          onerror="this.parentElement.className='list-thumb no-img-sm';this.parentElement.textContent='${abbr}'"></div>`
     : `<div class="list-thumb no-img-sm" style="font-size:9px;font-weight:800;letter-spacing:.1em;color:var(--ink4)">${abbr}</div>`;
 
+  const curateChip = IS_ADMIN ? `<button class="list-curate-btn${CURATED_URLS.has(a.source_url) ? ' is-curated' : ''}"
+    data-source-url="${esc(a.source_url || '')}"
+    onclick="toggleCurate(event, this)"
+    title="${CURATED_URLS.has(a.source_url) ? 'Uncurate' : 'Curate'}">${CURATED_URLS.has(a.source_url) ? '★' : '☆'}</button>` : '';
+
   return `<div class="list-card" onclick="openReader(${i})">
     ${thumb}
     <div class="list-main">
@@ -345,6 +358,7 @@ function listCardHTML(a, i) {
       <div class="list-title">${esc(a.heading||'Untitled')}</div>
     </div>
     <div class="list-meta">
+      ${curateChip}
       <span class="list-date">${date}</span>
       ${langBadge(a)}
       ${hocalwireBadge(a)}
@@ -2174,11 +2188,50 @@ async function pollFetch() {
   showSkeleton(false);
 }
 
+async function fetchUserInfo() {
+  try {
+    const data = await fetch('/api/user-info').then(r => r.json());
+    IS_ADMIN = data.is_admin === true;
+  } catch(e) { console.error('Failed to get user info:', e); }
+}
+
+async function fetchCuratedUrls() {
+  try {
+    const data = await fetch('/api/curated').then(r => r.json());
+    if (data.status === 'success') CURATED_URLS = new Set(data.curated_urls || []);
+  } catch(e) { console.error('Failed to get curated URLs:', e); }
+}
+
+async function toggleCurate(event, btn) {
+  event.stopPropagation();
+  const sourceUrl = btn.dataset.sourceUrl;
+  if (!sourceUrl) return;
+  const isCurated = CURATED_URLS.has(sourceUrl);
+  try {
+    const res = await fetch('/api/curate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ source_url: sourceUrl, curated: !isCurated }),
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      if (data.curated) CURATED_URLS.add(sourceUrl);
+      else CURATED_URLS.delete(sourceUrl);
+      renderFeed();
+      toast('ok', data.curated ? 'Article curated' : 'Article uncurated');
+    }
+  } catch(e) { toast('err', 'Curation failed'); }
+}
+
 async function loadArticles() {
   try {
     const data = await fetch('/api/articles').then(r=>r.json());
     if (data.status==='success') {
-      ALL = (data.articles||[]).map((a, i) => { a._serverIdx = i; return a; });
+      ALL = (data.articles||[]).map((a) => {
+        if (a._server_idx !== undefined) a._serverIdx = a._server_idx;
+        return a;
+      });
+      if (IS_ADMIN) await fetchCuratedUrls();
       refreshMeta(ALL);
       buildTicker(ALL);
       PAGE = 1;
@@ -2601,5 +2654,8 @@ async function sendChatMessage(e) {
 }
 
 // ── Init ──────────────────────────────────────────────────────
-loadArticles();
-refreshActivityCount();
+(async () => {
+  await fetchUserInfo();
+  await loadArticles();
+  refreshActivityCount();
+})();
