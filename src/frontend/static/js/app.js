@@ -414,6 +414,20 @@ const readerScroll  = $('reader-scroll');
 const readerProg    = $('reader-prog');
 
 function openReaderByServerIdx(serverIdx) {
+  // Switch back to feed view first if we're in a non-feed view
+  if (!FEED_VISIBLE) {
+    FEED_VISIBLE = true;
+    const actView     = $('activity-view');
+    const curatedView = $('curated-view');
+    const feedArea    = $('feed-area');
+    if (actView)     actView.classList.add('hidden');
+    if (curatedView) curatedView.classList.add('hidden');
+    if (feedArea)    feedArea.style.display = '';
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    const allBtn = document.querySelector('#nav-list .nav-btn[data-cat="all"]');
+    if (allBtn) allBtn.classList.add('active');
+    applyFilters();
+  }
   const i = SHOWN.findIndex(a => a._serverIdx === serverIdx);
   if (i >= 0) openReader(i);
 }
@@ -2536,8 +2550,6 @@ async function renderActivityView() {
   } catch(e) {
     feedEl.innerHTML = `<div class="pub-feed-loading" style="color:var(--err)">Failed to load feed</div>`;
   }
-
-  renderCuratedPanel();
 }
 
 function openPubDetail(i) {
@@ -2568,19 +2580,19 @@ function closePubDetail(e) {
 }
 
 function renderCuratedPanel() {
-  const wrap      = $('curated-feed-wrap');
-  const feedEl    = $('curated-feed');
-  const emptyEl   = $('curated-empty');
-  const cntEl     = $('cnt-curated-panel');
-  if (!wrap || !IS_ADMIN) return;
+  const feedEl  = $('curated-feed');
+  const emptyEl = $('curated-empty');
+  const cntEl   = $('cnt-curated-nav');
+  if (!feedEl || !IS_ADMIN) return;
 
-  wrap.style.display = '';
   const curated = ALL.filter(a => a.source_url && CURATED_URLS.has(a.source_url));
-
-  if (cntEl) cntEl.textContent = curated.length;
+  if (cntEl) {
+    cntEl.textContent    = curated.length;
+    cntEl.style.display  = curated.length > 0 ? '' : 'none';
+  }
 
   if (curated.length === 0) {
-    feedEl.innerHTML = '';
+    feedEl.innerHTML      = '';
     emptyEl.style.display = '';
     return;
   }
@@ -2590,7 +2602,7 @@ function renderCuratedPanel() {
     const cat  = catOf(a);
     const date = relTime(a.publish_date || a.scraped_at);
     return `
-      <div class="pub-card" onclick="openReaderByServerIdx(${a._serverIdx})" style="cursor:pointer">
+      <div class="pub-card" onclick="openReaderByServerIdx(${a._serverIdx})">
         <div class="pub-card-top">
           <span class="pub-card-cat ${cat.cls}">${cat.key}</span>
           <span class="pub-card-expiry">${esc(a.source_name || '')}</span>
@@ -2606,6 +2618,58 @@ function renderCuratedPanel() {
   }).join('');
 }
 
+// Wire curated nav button — injected for admin only after fetchUserInfo()
+function wireCuratedNav() {
+  if (!IS_ADMIN) return;
+
+  // Inject the nav button below Activity
+  const activityLi = document.querySelector('#nav-activity-btn')?.closest('li');
+  if (!activityLi || $('nav-curated-btn')) return; // already injected
+
+  const li = document.createElement('li');
+  li.innerHTML = `
+    <button class="nav-btn" id="nav-curated-btn">
+      <span class="nav-btn-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M7 1l1.6 3.2L12 4.8l-2.5 2.4.6 3.4L7 9l-3.1 1.6.6-3.4L2 4.8l3.4-.6z"
+                stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      Curated Feed
+      <span class="nav-count" id="cnt-curated-nav" style="display:none">0</span>
+    </button>`;
+  activityLi.after(li);
+
+  const curatedBtn  = $('nav-curated-btn');
+  const feedArea    = $('feed-area');
+  const actView     = $('activity-view');
+  const curatedView = $('curated-view');
+
+  curatedBtn.addEventListener('click', () => {
+    if (curatedBtn.classList.contains('active')) return;
+
+    // Deactivate all nav buttons
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    curatedBtn.classList.add('active');
+
+    // Hide feed, show curated view
+    if (feedArea)    feedArea.style.display  = 'none';
+    if (actView)     actView.classList.add('hidden');
+    if (curatedView) curatedView.classList.remove('hidden');
+
+    FEED_VISIBLE = false;
+    renderCuratedPanel();
+
+    // Close sidebar on mobile
+    const sidebar    = $('sidebar');
+    const sbBackdrop = $('sb-backdrop');
+    if (sidebar && window.innerWidth < 768) {
+      sidebar.classList.remove('open');
+      if (sbBackdrop) sbBackdrop.classList.remove('active');
+    }
+  });
+}
+
 // Activity nav button
 (function wireActivityNav() {
   const actBtn  = $('nav-activity-btn');
@@ -2615,18 +2679,20 @@ function renderCuratedPanel() {
 
   actBtn.addEventListener('click', () => {
     const isActive = actBtn.classList.contains('active');
-    if (isActive) return; // already showing
+    if (isActive) return;
 
-    // Deactivate all category nav buttons and activate activity btn
     document.querySelectorAll('#nav-list .nav-btn').forEach(b => b.classList.remove('active'));
+    const curatedBtn = $('nav-curated-btn');
+    if (curatedBtn) curatedBtn.classList.remove('active');
     actBtn.classList.add('active');
     FEED_VISIBLE = false;
 
-    // Hide feed panels, show activity
     $('grid').classList.add('hidden');
     $('list-view').classList.add('hidden');
     $('skeleton').style.display = 'none';
     $('empty').style.display    = 'none';
+    const cv = $('curated-view');
+    if (cv) cv.classList.add('hidden');
     actView.classList.remove('hidden');
     renderActivityView();
 
@@ -2638,6 +2704,10 @@ function renderCuratedPanel() {
     if (!FEED_VISIBLE) {
       FEED_VISIBLE = true;
       actView.classList.add('hidden');
+      const cv = $('curated-view');
+      if (cv) cv.classList.add('hidden');
+      const curatedBtn = $('nav-curated-btn');
+      if (curatedBtn) curatedBtn.classList.remove('active');
       actBtn.classList.remove('active');
       applyFilters();
     }
@@ -2709,6 +2779,7 @@ async function sendChatMessage(e) {
 // ── Init ──────────────────────────────────────────────────────
 (async () => {
   await fetchUserInfo();
+  wireCuratedNav();
   await loadArticles();
   refreshActivityCount();
 })();
