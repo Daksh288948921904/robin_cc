@@ -413,6 +413,11 @@ const readerOverlay = $('reader-overlay');
 const readerScroll  = $('reader-scroll');
 const readerProg    = $('reader-prog');
 
+function openReaderByServerIdx(serverIdx) {
+  const i = SHOWN.findIndex(a => a._serverIdx === serverIdx);
+  if (i >= 0) openReader(i);
+}
+
 function openReader(i) {
   const a = SHOWN[i]; if (!a) return;
   const cat = catOf(a);
@@ -2224,6 +2229,7 @@ async function toggleCurate(event, btn) {
       if (data.curated) CURATED_URLS.add(sourceUrl);
       else CURATED_URLS.delete(sourceUrl);
       renderFeed();
+      renderCuratedPanel();
       toast('ok', data.curated ? 'Article curated' : 'Article uncurated');
     }
   } catch(e) { toast('err', 'Curation failed'); }
@@ -2530,6 +2536,8 @@ async function renderActivityView() {
   } catch(e) {
     feedEl.innerHTML = `<div class="pub-feed-loading" style="color:var(--err)">Failed to load feed</div>`;
   }
+
+  renderCuratedPanel();
 }
 
 function openPubDetail(i) {
@@ -2557,6 +2565,45 @@ function closePubDetail(e) {
   if (e && e.target !== $('pub-detail-overlay')) return;
   $('pub-detail-overlay').classList.add('hidden');
   document.body.style.overflow = '';
+}
+
+function renderCuratedPanel() {
+  const wrap      = $('curated-feed-wrap');
+  const feedEl    = $('curated-feed');
+  const emptyEl   = $('curated-empty');
+  const cntEl     = $('cnt-curated-panel');
+  if (!wrap || !IS_ADMIN) return;
+
+  wrap.style.display = '';
+  const curated = ALL.filter(a => a.source_url && CURATED_URLS.has(a.source_url));
+
+  if (cntEl) cntEl.textContent = curated.length;
+
+  if (curated.length === 0) {
+    feedEl.innerHTML = '';
+    emptyEl.style.display = '';
+    return;
+  }
+  emptyEl.style.display = 'none';
+
+  feedEl.innerHTML = curated.map(a => {
+    const cat  = catOf(a);
+    const date = relTime(a.publish_date || a.scraped_at);
+    return `
+      <div class="pub-card" onclick="openReaderByServerIdx(${a._serverIdx})" style="cursor:pointer">
+        <div class="pub-card-top">
+          <span class="pub-card-cat ${cat.cls}">${cat.key}</span>
+          <span class="pub-card-expiry">${esc(a.source_name || '')}</span>
+        </div>
+        <h3 class="pub-card-heading">${esc(a.heading || 'Untitled')}</h3>
+        ${a.sub_heading ? `<p class="pub-card-sub">${esc(a.sub_heading)}</p>` : ''}
+        <div class="pub-card-meta">
+          ${a.region ? `<span>${esc(a.region)}</span>` : ''}
+          <span class="pub-card-time">${date}</span>
+          <a class="pub-card-id" href="${esc(a.source_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗ Source</a>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 // Activity nav button
