@@ -307,7 +307,7 @@ function cardHTML(a, i) {
     media = `
       <div class="card-media card-blank" style="background:linear-gradient(145deg,${c1}28 0%,rgba(9,9,11,.98) 65%),repeating-linear-gradient(-45deg,transparent,transparent 38px,rgba(255,255,255,.018) 38px,rgba(255,255,255,.018) 39px)">
         <div class="card-blank-icon">${CAT_ICONS[cat.key]||'📰'}</div>
-        <div class="card-blank-wordmark">${esc((a.source_name||'').toUpperCase())}</div>
+        ${IS_ADMIN ? `<div class="card-blank-wordmark">${esc((a.source_name||'').toUpperCase())}</div>` : ''}
         <div class="card-overlay"></div>
       </div>`;
   }
@@ -329,8 +329,8 @@ function cardHTML(a, i) {
     ${isHero ? `<span class="card-featured-label">Lead Story</span>` : ''}
     <div class="card-info">
       <div class="card-source-row">
-        <span class="card-source-dot"></span>
-        <span class="card-source">${esc(a.source_name||'Unknown')}</span>
+        ${IS_ADMIN ? `<span class="card-source-dot"></span>
+        <span class="card-source">${esc(a.source_name||'Unknown')}</span>` : ''}
         ${a.region ? `<span class="card-region">· ${esc(a.region)}</span>` : ''}
         <span class="card-date">${date}</span>
       </div>
@@ -347,8 +347,8 @@ function listCardHTML(a, i) {
   const abbr   = (a.source_name||'').slice(0,4).toUpperCase()||cat.key.slice(0,4).toUpperCase();
   const thumb  = img
     ? `<div class="list-thumb"><img src="${esc(img)}" loading="lazy"
-         onerror="this.parentElement.className='list-thumb no-img-sm';this.parentElement.textContent='${abbr}'"></div>`
-    : `<div class="list-thumb no-img-sm" style="font-size:9px;font-weight:800;letter-spacing:.1em;color:var(--ink4)">${abbr}</div>`;
+         onerror="this.parentElement.className='list-thumb no-img-sm';this.parentElement.textContent='${IS_ADMIN ? abbr : ''}'"></div>`
+    : `<div class="list-thumb no-img-sm" style="font-size:9px;font-weight:800;letter-spacing:.1em;color:var(--ink4)">${IS_ADMIN ? abbr : ''}</div>`;
 
   const curateChip = IS_ADMIN ? `<button class="list-curate-btn${CURATED_URLS.has(a.source_url) ? ' is-curated' : ''}"
     data-source-url="${esc(a.source_url || '')}"
@@ -358,7 +358,7 @@ function listCardHTML(a, i) {
   return `<div class="list-card" onclick="openReader(${i})">
     ${thumb}
     <div class="list-main">
-      <div class="list-source">${esc(a.source_name||'Unknown')}${a.region?` <span style="color:var(--ink4);font-weight:400">· ${esc(a.region)}</span>`:''}</div>
+      <div class="list-source">${IS_ADMIN ? esc(a.source_name||'Unknown') : ''}${a.region?` <span style="color:var(--ink4);font-weight:400">· ${esc(a.region)}</span>`:''}</div>
       <div class="list-title">${esc(a.heading||'Untitled')}</div>
     </div>
     <div class="list-meta">
@@ -447,11 +447,11 @@ function openReader(i) {
   // Header meta
   $('rh-meta').innerHTML = `
     <span class="rh-cat ${cat.cls}">${cat.key}</span>
-    <span class="rh-source">${esc(a.source_name||'Unknown')}</span>
+    ${IS_ADMIN ? `<span class="rh-source">${esc(a.source_name||'Unknown')}</span>` : ''}
     <span class="rh-date">${relTime(a.publish_date||a.scraped_at)} · ${words} words · ${rt(words)} read</span>
   `;
   const extLink = $('reader-ext');
-  if (a.source_url) { extLink.href=a.source_url; extLink.style.display=''; }
+  if (IS_ADMIN && a.source_url) { extLink.href=a.source_url; extLink.style.display=''; }
   else extLink.style.display='none';
 
   $('r-cat').textContent   = cat.key;
@@ -466,7 +466,7 @@ function openReader(i) {
     a.authors?.length ? `<span>✍ ${esc(a.authors.join(', '))}</span>` : '',
     a.location||a.dateline ? `<span>📍 ${esc((a.location||a.dateline||'').replace(/\*+/g,'').trim())}</span>` : '',
     `<span>⏱ ${rt(words)} read</span>`,
-    a.source_url ? `<a href="${esc(a.source_url)}" target="_blank" rel="noopener">↗ Original source</a>` : '',
+    IS_ADMIN && a.source_url ? `<a href="${esc(a.source_url)}" target="_blank" rel="noopener">↗ Original source</a>` : '',
   ].filter(Boolean).join('<span style="color:var(--border-hi)">·</span>');
 
   SELECTED_IMAGE = null;  // reset picker on new article open
@@ -596,6 +596,12 @@ function timelineLoadingHTML() {
 }
 
 async function loadCoverage(realIdx) {
+  const coverageWrap = document.querySelector('.coverage-wrap');
+  if (!IS_ADMIN) {
+    if (coverageWrap) coverageWrap.style.display = 'none';
+    return;
+  }
+  if (coverageWrap) coverageWrap.style.display = '';
   const myToken = _readerGenToken;
   try {
     const res  = await fetch(`/api/articles/${realIdx}/coverage`);
@@ -778,7 +784,7 @@ function collectEditedContent() {
 function renderSummary(s, realIdx) {
   CURRENT_SUMM = s;
   const bodyHtml = bodyToHtml(s.body || '');
-  const srcsHtml = (s.sources_list||[]).map((src,n)=>`
+  const srcsHtml = IS_ADMIN ? (s.sources_list||[]).map((src,n)=>`
     <li class="sum-src-item">
       <span class="sum-src-num">${n+1}</span>
       <div class="sum-src-body">
@@ -786,7 +792,7 @@ function renderSummary(s, realIdx) {
         ${src.headline?`<span class="sum-src-hl">— ${esc(src.headline.slice(0,90))}</span>`:''}
         ${src.url?`<a class="sum-src-url" href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.url.slice(0,60))}…</a>`:''}
       </div>
-    </li>`).join('');
+    </li>`).join('') : '';
 
   const pipelineBadge = s.generation_pipeline === 'aspect_rag_v1'
     ? `<span class="sum-badge sum-badge--rag">RAG Pipeline</span>`
@@ -801,15 +807,15 @@ function renderSummary(s, realIdx) {
       <button class="sum-category-btn" style="display:none" aria-hidden="true">${esc(s.category||'World')}</button>
       <div class="sum-meta-row">
         ${pipelineBadge}
-        <span class="sum-meta-sources">${(s.sources_list||[]).length} source${(s.sources_list||[]).length!==1?'s':''} synthesised</span>
+        ${IS_ADMIN ? `<span class="sum-meta-sources">${(s.sources_list||[]).length} source${(s.sources_list||[]).length!==1?'s':''} synthesised</span>` : ''}
       </div>
       <div class="sum-divider"></div>
       <div class="sum-body">${bodyHtml}</div>
       ${s.reporter ? `<div class="sum-reporter">Reported by <strong>${esc(s.reporter)}</strong></div>` : ''}
-      <div class="sum-sources-block">
+      ${IS_ADMIN ? `<div class="sum-sources-block">
         <div class="sum-sources-title">Sources</div>
         <ol class="sum-src-list">${srcsHtml}</ol>
-      </div>
+      </div>` : ''}
       <div class="sum-actions">
         <button class="edit-briefing-btn" onclick="toggleEditMode()">
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9 1l3 3-7 7H2V8l7-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
@@ -819,7 +825,7 @@ function renderSummary(s, realIdx) {
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Download .docx
         </button>
-        <span class="sum-note">Channel-ready · ${(s.sources_list||[]).length} source(s)</span>
+        ${IS_ADMIN ? `<span class="sum-note">Channel-ready · ${(s.sources_list||[]).length} source(s)</span>` : ''}
       </div>
     </div>`;
 
@@ -2773,6 +2779,11 @@ async function sendChatMessage(e) {
 (async () => {
   await fetchUserInfo();
   wireCuratedNav();
+  if (!IS_ADMIN) {
+    // Hide the Sources stat cell from the sidebar for non-admin users
+    const sourcesCell = $('s-sources')?.closest('.stat-cell');
+    if (sourcesCell) sourcesCell.style.display = 'none';
+  }
   await loadArticles();
   refreshActivityCount();
 })();
