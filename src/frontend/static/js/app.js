@@ -419,10 +419,8 @@ function openReaderByServerIdx(serverIdx) {
     FEED_VISIBLE = true;
     const actView     = $('activity-view');
     const curatedView = $('curated-view');
-    const feedArea    = $('feed-area');
     if (actView)     actView.classList.add('hidden');
     if (curatedView) curatedView.classList.add('hidden');
-    if (feedArea)    feedArea.style.display = '';
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     const allBtn = document.querySelector('#nav-list .nav-btn[data-cat="all"]');
     if (allBtn) allBtn.classList.add('active');
@@ -2641,32 +2639,27 @@ function wireCuratedNav() {
   activityLi.after(li);
 
   const curatedBtn  = $('nav-curated-btn');
-  const feedArea    = $('feed-area');
   const actView     = $('activity-view');
   const curatedView = $('curated-view');
 
   curatedBtn.addEventListener('click', () => {
     if (curatedBtn.classList.contains('active')) return;
 
-    // Deactivate all nav buttons
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     curatedBtn.classList.add('active');
+    FEED_VISIBLE = false;
 
-    // Hide feed, show curated view
-    if (feedArea)    feedArea.style.display  = 'none';
-    if (actView)     actView.classList.add('hidden');
+    // Hide feed elements (same pattern as activity view)
+    $('grid').classList.add('hidden');
+    $('list-view').classList.add('hidden');
+    $('skeleton').style.display = 'none';
+    $('empty').style.display    = 'none';
+    if (actView) actView.classList.add('hidden');
     if (curatedView) curatedView.classList.remove('hidden');
 
-    FEED_VISIBLE = false;
     renderCuratedPanel();
 
-    // Close sidebar on mobile
-    const sidebar    = $('sidebar');
-    const sbBackdrop = $('sb-backdrop');
-    if (sidebar && window.innerWidth < 768) {
-      sidebar.classList.remove('open');
-      if (sbBackdrop) sbBackdrop.classList.remove('active');
-    }
+    if (window.innerWidth <= 900) closeSidebar();
   });
 }
 
