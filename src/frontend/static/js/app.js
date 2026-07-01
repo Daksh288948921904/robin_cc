@@ -599,11 +599,13 @@ async function loadCoverage(realIdx) {
   const coverageWrap = document.querySelector('.coverage-wrap');
   if (!IS_ADMIN) {
     if (coverageWrap) coverageWrap.style.display = 'none';
-    // Still kick off summary, timeline, and social — they live inside loadCoverage's flow
-    const myToken = _readerGenToken;
-    generateSummaryRag(realIdx, myToken);
-    generateTimeline(realIdx, myToken);
-    loadSocialReactions(realIdx);
+    if (realIdx >= 0) {
+      // Article is in the current scrape — generation and social work normally
+      const myToken = _readerGenToken;
+      generateSummaryRag(realIdx, myToken);
+      generateTimeline(realIdx, myToken);
+      loadSocialReactions(realIdx);
+    }
     return;
   }
   if (coverageWrap) coverageWrap.style.display = '';

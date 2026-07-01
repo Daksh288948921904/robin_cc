@@ -107,29 +107,70 @@ def _is_admin(request: Request) -> bool:
     return request.session.get('user', '') in _ADMIN_EMAILS
 
 
-# ── Curation storage ────────────────────────────────────────────
-_CURATED_URLS: set = set()
-_CURATED_FILE = PROJECT_ROOT / 'output' / 'curated.json'
+# ── Curation storage (MongoDB) ───────────────────────────────────
+_CURATED_URLS: set = set()   # in-memory cache for fast star-button rendering
+_curated_col = None           # pymongo collection handle
+
+
+def _get_curated_col():
+    global _curated_col
+    if _curated_col is not None:
+        return _curated_col
+    try:
+        import pymongo
+        uri = os.environ.get('MONGO_URI') or os.environ.get('MONGODB_ATLAS_URI')
+        if not uri:
+            return None
+        db_name = os.environ.get('MONGO_DB_NAME', 'osi_news_automation')
+        client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=5000)
+        db = client[db_name]
+        _curated_col = db['curated_articles']
+        _curated_col.create_index('source_url', unique=True)
+        print('[Curate] MongoDB curated_articles collection ready')
+    except Exception as e:
+        print(f'[Curate] MongoDB connect failed: {e}')
+        _curated_col = None
+    return _curated_col
 
 
 def _load_curated():
     global _CURATED_URLS
+    col = _get_curated_col()
+    if not col:
+        return
     try:
-        if _CURATED_FILE.exists():
-            with open(_CURATED_FILE, 'r') as f:
-                _CURATED_URLS = set(json.load(f))
-            print(f'[Startup] Loaded {len(_CURATED_URLS)} curated URLs')
+        docs = col.find({}, {'source_url': 1, '_id': 0})
+        _CURATED_URLS = {d['source_url'] for d in docs if d.get('source_url')}
+        print(f'[Startup] Loaded {len(_CURATED_URLS)} curated URLs from MongoDB')
     except Exception as e:
         print(f'[Startup] Curated load failed: {e}')
 
 
-def _save_curated():
-    try:
-        _CURATED_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(_CURATED_FILE, 'w') as f:
-            json.dump(sorted(_CURATED_URLS), f)
-    except Exception as e:
-        print(f'[Curate] Failed to save curated list: {e}')
+def _curate_add(article: dict):
+    """Save full article to MongoDB curated collection and update in-memory set."""
+    src = article.get('source_url', '')
+    if not src:
+        return
+    col = _get_curated_col()
+    if col:
+        try:
+            doc = {k: v for k, v in article.items() if k != '_id'}
+            doc['curated_at'] = datetime.utcnow().isoformat()
+            col.update_one({'source_url': src}, {'$set': doc}, upsert=True)
+        except Exception as e:
+            print(f'[Curate] MongoDB save failed: {e}')
+    _CURATED_URLS.add(src)
+
+
+def _curate_remove(source_url: str):
+    """Remove article from MongoDB curated collection and in-memory set."""
+    col = _get_curated_col()
+    if col:
+        try:
+            col.delete_one({'source_url': source_url})
+        except Exception as e:
+            print(f'[Curate] MongoDB remove failed: {e}')
+    _CURATED_URLS.discard(source_url)
 
 
 _log_level = getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO)
@@ -230,10 +271,13 @@ async def curate_article(request: Request):
     if not source_url:
         return JSONResponse({'status': 'error', 'message': 'source_url required'}, status_code=400)
     if curated:
-        _CURATED_URLS.add(source_url)
+        article = next((a for a in SCRAPED_ARTICLES if a.get('source_url') == source_url), None)
+        if article:
+            _curate_add(article)
+        else:
+            _CURATED_URLS.add(source_url)
     else:
-        _CURATED_URLS.discard(source_url)
-    _save_curated()
+        _curate_remove(source_url)
     return JSONResponse({'status': 'success', 'curated': curated, 'total_curated': len(_CURATED_URLS)})
 
 
@@ -468,13 +512,23 @@ async def index(request: Request):
 @app.get('/api/articles')
 async def get_articles(request: Request):
     admin = _is_admin(request)
-    result = []
-    for real_idx, a in enumerate(SCRAPED_ARTICLES):
-        if not admin and a.get('source_url') not in _CURATED_URLS:
-            continue
-        entry = dict(a)
-        entry['_server_idx'] = real_idx
-        result.append(entry)
+    if admin:
+        result = []
+        for real_idx, a in enumerate(SCRAPED_ARTICLES):
+            entry = dict(a)
+            entry['_server_idx'] = real_idx
+            result.append(entry)
+    else:
+        # Non-admin: serve curated articles from MongoDB
+        # Cross-reference with current scrape to get valid server indices
+        url_to_idx = {a.get('source_url'): i for i, a in enumerate(SCRAPED_ARTICLES) if a.get('source_url')}
+        col = _get_curated_col()
+        curated_docs = list(col.find({}, {'_id': 0}).sort('curated_at', -1)) if col else []
+        result = []
+        for doc in curated_docs:
+            entry = {k: v for k, v in doc.items() if k != '_id'}
+            entry['_server_idx'] = url_to_idx.get(doc.get('source_url', ''), -1)
+            result.append(entry)
     return JSONResponse({
         'status': 'success',
         'count': len(result),
@@ -1092,6 +1146,8 @@ async def publish_to_hocalwire(request: Request, idx: int):
             main_article['hocalwire_feed_id'] = feed_id
             main_article['uploaded_at']       = article_payload.get('uploaded_at', '')
             _record_activity(key, main_article, published_hocalwire=True)
+            # Remove from curated MongoDB so non-admin feed clears this article
+            _curate_remove(main_article.get('source_url', ''))
             try:
                 from src.utils.country_resolver import resolve_country as _resolve_country
                 _country = (
