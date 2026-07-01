@@ -198,6 +198,10 @@ async def _auth_middleware(request: Request, call_next):
         return await call_next(request)
     if not request.session.get('authenticated'):
         return RedirectResponse(url=f'/login?next={path}', status_code=302)
+    # Old sessions (pre user-identity update) lack the 'user' field — force re-login
+    if not request.session.get('user') and not path.startswith('/api/'):
+        request.session.clear()
+        return RedirectResponse(url=f'/login?next={path}', status_code=302)
     return await call_next(request)
 
 
