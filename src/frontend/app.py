@@ -136,7 +136,7 @@ def _get_curated_col():
 def _load_curated():
     global _CURATED_URLS
     col = _get_curated_col()
-    if not col:
+    if col is None:
         return
     try:
         docs = col.find({}, {'source_url': 1, '_id': 0})
@@ -152,7 +152,7 @@ def _curate_add(article: dict):
     if not src:
         return
     col = _get_curated_col()
-    if col:
+    if col is not None:
         try:
             doc = {k: v for k, v in article.items() if k != '_id'}
             doc['curated_at'] = datetime.utcnow().isoformat()
@@ -165,7 +165,7 @@ def _curate_add(article: dict):
 def _curate_remove(source_url: str):
     """Remove article from MongoDB curated collection and in-memory set."""
     col = _get_curated_col()
-    if col:
+    if col is not None:
         try:
             col.delete_one({'source_url': source_url})
         except Exception as e:
@@ -523,7 +523,7 @@ async def get_articles(request: Request):
         # Cross-reference with current scrape to get valid server indices
         url_to_idx = {a.get('source_url'): i for i, a in enumerate(SCRAPED_ARTICLES) if a.get('source_url')}
         col = _get_curated_col()
-        curated_docs = list(col.find({}, {'_id': 0}).sort('curated_at', -1)) if col else []
+        curated_docs = list(col.find({}, {'_id': 0}).sort('curated_at', -1)) if col is not None else []
         result = []
         for doc in curated_docs:
             entry = {k: v for k, v in doc.items() if k != '_id'}
