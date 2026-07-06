@@ -293,6 +293,24 @@ async def get_curated(request: Request):
     return JSONResponse({'status': 'success', 'curated_urls': sorted(_CURATED_URLS), 'count': len(_CURATED_URLS)})
 
 
+@app.delete('/api/curated')
+async def clear_curated(request: Request):
+    """Admin-only: wipe all entries from the curated feed collection."""
+    if not _is_admin(request):
+        return JSONResponse({'status': 'error', 'message': 'Forbidden'}, status_code=403)
+    global _CURATED_URLS
+    col = _get_curated_col()
+    deleted = 0
+    if col is not None:
+        try:
+            result = col.delete_many({})
+            deleted = result.deleted_count
+        except Exception as e:
+            return JSONResponse({'status': 'error', 'message': str(e)}, status_code=500)
+    _CURATED_URLS = set()
+    return JSONResponse({'status': 'success', 'deleted': deleted})
+
+
 # ── Shared state ─────────────────────────────────────────────────
 SCRAPED_ARTICLES = []
 OUTPUT_DIR = PROJECT_ROOT / 'output' / 'json'
@@ -527,14 +545,25 @@ async def get_articles(request: Request):
             result.append(entry)
     else:
         # Non-admin: serve curated articles from MongoDB
-        # Cross-reference with current scrape to get valid server indices
+        # Cross-reference with current scrape to get valid server indices.
+        # If a curated article is no longer in the current scrape (e.g. scraper
+        # ran after it was curated), inject it into SCRAPED_ARTICLES so all
+        # downstream endpoints (generate, publish, etc.) can look it up by idx.
         url_to_idx = {a.get('source_url'): i for i, a in enumerate(SCRAPED_ARTICLES) if a.get('source_url')}
         col = _get_curated_col()
         curated_docs = list(col.find({}, {'_id': 0}).sort('curated_at', -1)) if col is not None else []
         result = []
         for doc in curated_docs:
             entry = {k: v for k, v in doc.items() if k != '_id'}
-            entry['_server_idx'] = url_to_idx.get(doc.get('source_url', ''), -1)
+            src_url = doc.get('source_url', '')
+            if src_url and src_url not in url_to_idx:
+                # Article aged out of SCRAPED_ARTICLES — re-inject it so idx stays valid
+                new_idx = len(SCRAPED_ARTICLES)
+                injected = {k: v for k, v in doc.items() if k != '_id'}
+                injected.pop('curated_at', None)
+                SCRAPED_ARTICLES.append(injected)
+                url_to_idx[src_url] = new_idx
+            entry['_server_idx'] = url_to_idx.get(src_url, -1)
             result.append(entry)
     return JSONResponse({
         'status': 'success',

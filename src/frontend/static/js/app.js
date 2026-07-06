@@ -2260,6 +2260,22 @@ async function toggleCurate(event, btn) {
   } catch(e) { toast('err', 'Curation failed'); }
 }
 
+async function clearCuratedFeed() {
+  if (!confirm('Remove all articles from the curated feed? This cannot be undone.')) return;
+  try {
+    const res = await fetch('/api/curated', { method: 'DELETE' });
+    const data = await res.json();
+    if (data.status === 'success') {
+      CURATED_URLS = new Set();
+      renderFeed();
+      renderCuratedPanel();
+      toast('ok', `Curated feed cleared (${data.deleted} removed)`);
+    } else {
+      toast('err', data.message || 'Clear failed');
+    }
+  } catch(e) { toast('err', 'Clear failed'); }
+}
+
 async function loadArticles() {
   try {
     const data = await fetch('/api/articles').then(r=>r.json());
