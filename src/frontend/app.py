@@ -387,7 +387,7 @@ def _upload_to_catbox(filepath: Path) -> str:
         return ''
 
 
-def _apply_title_overlay(image_bytes: bytes, title: str) -> bytes | None:
+def _apply_title_overlay(image_bytes: bytes, title: str, brand: str = 'Robin CC') -> bytes | None:
     """Composite title text over a dark strip at the bottom 28% of the image.
 
     Returns JPEG bytes at 1200×675 (16:9), or None on failure.
@@ -466,7 +466,7 @@ def _apply_title_overlay(image_bytes: bytes, title: str) -> bytes | None:
             text_y += lh + 8
 
         # Brand label bottom-right
-        brand = 'Robin CC'
+        brand = (brand or 'Robin CC').strip()
         bw = brand_font.getbbox(brand)[2] - brand_font.getbbox(brand)[0]
         draw.text((W - bw - pad, H - 22), brand, font=brand_font, fill=(210, 210, 210))
 
@@ -1133,6 +1133,7 @@ async def push_social_posts(request: Request, idx: int):
         body_json = {}
 
     selected_image = (body_json.get('selected_image') or sp.get('image_url', '')).strip()
+    brand          = (body_json.get('brand') or 'Robin CC').strip()
     results = {}
 
     # ── Ayrshare path ────────────────────────────────────────────
@@ -1156,7 +1157,7 @@ async def push_social_posts(request: Request, idx: int):
                     r.raise_for_status()
                     img_bytes = r.content
 
-                overlay_bytes = _apply_title_overlay(img_bytes, heading)
+                overlay_bytes = _apply_title_overlay(img_bytes, heading, brand=brand)
                 if overlay_bytes:
                     _SOCIAL_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
                     ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
@@ -1610,7 +1611,7 @@ async def trigger_video_workflow(request: Request, idx: int):
 
 
 @app.get('/api/articles/{idx}/social-image')
-async def get_social_image(request: Request, idx: int, selected_image: str = ''):
+async def get_social_image(request: Request, idx: int, selected_image: str = '', brand: str = 'Robin CC'):
     """Return a JPEG (1200×675) of the article photo with title overlaid at the bottom."""
     if idx < 0 or idx >= len(SCRAPED_ARTICLES):
         return JSONResponse({'status': 'error', 'message': 'Article not found'}, status_code=404)
@@ -1645,7 +1646,7 @@ async def get_social_image(request: Request, idx: int, selected_image: str = '')
     except Exception as e:
         return JSONResponse({'status': 'error', 'message': f'Image fetch failed: {e}'}, status_code=502)
 
-    jpeg_bytes = _apply_title_overlay(image_bytes, title)
+    jpeg_bytes = _apply_title_overlay(image_bytes, title, brand=brand)
     if not jpeg_bytes:
         return JSONResponse({'status': 'error', 'message': 'Overlay generation failed'}, status_code=500)
 

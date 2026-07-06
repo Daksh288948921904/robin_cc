@@ -3113,6 +3113,26 @@ body::before {
   font-size:11px;color:#64748b;padding:12px 16px;text-align:center;
 }
 
+/* ── Author name row ── */
+.smodal-author-row{
+  display:flex;align-items:center;gap:8px;
+  padding:0 20px 12px;
+}
+.smodal-author-label{
+  font-size:11px;color:#64748b;white-space:nowrap;flex-shrink:0;
+}
+.smodal-author-input{
+  flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+  border-radius:6px;padding:5px 10px;font-size:13px;color:#e2e8f0;
+  outline:none;min-width:0;
+}
+.smodal-author-input:focus{border-color:rgba(99,102,241,.5);background:rgba(255,255,255,.09)}
+.smodal-author-refresh{
+  flex-shrink:0;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);
+  border-radius:6px;padding:5px 8px;color:#94a3b8;cursor:pointer;display:flex;align-items:center;
+}
+.smodal-author-refresh:hover{background:rgba(255,255,255,.13);color:#fff}
+
 /* ═══════════════════════════════════════════════
    TV SCRIPT TELEPROMPTER CARD
 ═══════════════════════════════════════════════ */

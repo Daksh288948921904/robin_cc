@@ -1314,8 +1314,26 @@ function openSocialPostModal() {
   _loadSocialOverlayImage(realIdx);
 }
 
+function _getSocialBrand() {
+  const el = $('smodal-author-input');
+  return el ? el.value.trim() || 'Robin CC' : 'Robin CC';
+}
+
+function onAuthorNameChange() { /* debounce handled by refreshOverlayImage on blur/button */ }
+
+async function refreshOverlayImage() {
+  const realIdx = CURRENT_REAL_IDX;
+  if (realIdx >= 0) {
+    if (_socialOverlayCache[realIdx]) { URL.revokeObjectURL(_socialOverlayCache[realIdx]); delete _socialOverlayCache[realIdx]; }
+    await _loadSocialOverlayImage(realIdx);
+  }
+}
+
 async function _loadSocialOverlayImage(realIdx) {
-  const siParam = SELECTED_IMAGE ? `?selected_image=${encodeURIComponent(SELECTED_IMAGE)}` : '';
+  const params = new URLSearchParams();
+  if (SELECTED_IMAGE) params.set('selected_image', SELECTED_IMAGE);
+  params.set('brand', _getSocialBrand());
+  const siParam = `?${params.toString()}`;
   try {
     const res = await fetch(`/api/articles/${realIdx}/social-image${siParam}`);
     if (!res.ok) return;
@@ -1623,7 +1641,7 @@ async function pushSocialToAll() {
   Object.values(chips).forEach(c => { c.className = 'spush-chip pending'; });
 
   try {
-    const body = { selected_image: SELECTED_IMAGE || '' };
+    const body = { selected_image: SELECTED_IMAGE || '', brand: _getSocialBrand() };
     const res  = await fetch(`/api/articles/${realIdx}/push-social`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
