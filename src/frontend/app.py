@@ -388,7 +388,7 @@ def _upload_to_catbox(filepath: Path) -> str:
 
 
 def _apply_title_overlay(image_bytes: bytes, title: str) -> bytes | None:
-    """Composite title text over a dark strip at the bottom 20% of the image.
+    """Composite title text over a dark strip at the bottom 28% of the image.
 
     Returns JPEG bytes at 1200×675 (16:9), or None on failure.
     """
@@ -399,20 +399,20 @@ def _apply_title_overlay(image_bytes: bytes, title: str) -> bytes | None:
         img = _PILImage.open(io.BytesIO(image_bytes)).convert('RGB')
         img = img.resize((W, H), _PILImage.LANCZOS)
 
-        # Build semi-transparent gradient over bottom 20%
-        grad_h = int(H * 0.20)   # 135 px
-        grad_y = H - grad_h       # 540
+        # Gradient over bottom 28% (~189 px) — solid black at very bottom, fading up
+        grad_h = int(H * 0.28)
+        grad_y = H - grad_h
         overlay = _PILImage.new('RGBA', (W, H), (0, 0, 0, 0))
         od = _ImageDraw.Draw(overlay)
         for row in range(grad_h):
-            alpha = int(185 * (row / grad_h))
+            alpha = int(200 * (row / grad_h))
             od.rectangle([(0, grad_y + row), (W, grad_y + row + 1)], fill=(0, 0, 0, alpha))
 
         img = _PILImage.composite(overlay, img.convert('RGBA'), overlay).convert('RGB')
         draw = _ImageDraw.Draw(img)
 
-        # Load font
-        font_size, brand_size = 34, 15
+        # Load font — static bold TTF, large size
+        font_size, brand_size = 48, 18
         try:
             font_path = str(_SOCIAL_FONT_PATH)
             title_font = _ImageFont.truetype(font_path, font_size)
@@ -421,8 +421,8 @@ def _apply_title_overlay(image_bytes: bytes, title: str) -> bytes | None:
             title_font = _ImageFont.load_default()
             brand_font = title_font
 
-        # Pixel-aware word wrap — max 2 lines inside the gradient strip
-        pad = 22
+        # Pixel-aware word wrap — whole words only, max 2 lines
+        pad = 28
         max_w = W - pad * 2
 
         def _line_w(text):
@@ -440,23 +440,30 @@ def _apply_title_overlay(image_bytes: bytes, title: str) -> bytes | None:
                     lines.append(cur)
                 cur = w
                 if len(lines) >= 1:
-                    # Truncate remaining into second line
-                    remaining = ' '.join(words[words.index(w):])
-                    while remaining and _line_w(remaining + '…') > max_w:
-                        remaining = remaining.rsplit(' ', 1)[0]
-                    lines.append(remaining.strip() + '…')
+                    # Fill second line with whole words, then truncate with ellipsis
+                    second = cur
+                    for remaining_word in words[words.index(w) + 1:]:
+                        attempt = second + ' ' + remaining_word
+                        if _line_w(attempt + '…') <= max_w:
+                            second = attempt
+                        else:
+                            break
+                    lines.append(second + '…')
                     cur = ''
                     break
         if cur:
             lines.append(cur)
         lines = lines[:2]
 
-        # Draw title
+        # Draw title with subtle text shadow for readability
         lh = title_font.getbbox('Ag')[3] - title_font.getbbox('Ag')[1]
-        text_y = grad_y + 10
+        text_y = grad_y + 18
         for line in lines:
+            # Shadow
+            draw.text((pad + 2, text_y + 2), line, font=title_font, fill=(0, 0, 0, 160))
+            # Main text
             draw.text((pad, text_y), line, font=title_font, fill=(255, 255, 255))
-            text_y += lh + 5
+            text_y += lh + 8
 
         # Brand label bottom-right
         brand = 'Robin CC'

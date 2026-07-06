@@ -1315,33 +1315,17 @@ function openSocialPostModal() {
 }
 
 async function _loadSocialOverlayImage(realIdx) {
-  const strip     = $('smodal-img-strip');
-  const loadingEl = $('smodal-img-loading');
-  const img       = $('smodal-overlay-img');
-  const errEl     = $('smodal-img-err');
-  if (!strip) return;
-
-  loadingEl.classList.remove('hidden');
-  img.classList.add('hidden');
-  errEl.classList.add('hidden');
-
   const siParam = SELECTED_IMAGE ? `?selected_image=${encodeURIComponent(SELECTED_IMAGE)}` : '';
   try {
     const res = await fetch(`/api/articles/${realIdx}/social-image${siParam}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) return;
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
-    // Revoke previous blob URL to avoid leaks
     if (_socialOverlayCache[realIdx]) URL.revokeObjectURL(_socialOverlayCache[realIdx]);
     _socialOverlayCache[realIdx] = url;
-    img.src = url;
-    img.classList.remove('hidden');
-    // Also swap the image on each platform card preview
     _renderOverlayOnCards(url);
   } catch(e) {
-    errEl.classList.remove('hidden');
-  } finally {
-    loadingEl.classList.add('hidden');
+    // silently skip — platform cards will show original image
   }
 }
 
