@@ -14,6 +14,7 @@ let VIEW    = 'grid';    // 'grid' | 'list'
 let READER_OPEN      = false;
 let CURRENT_IDX      = -1;   // index in SHOWN of open article
 let CURRENT_SUMM     = null; // generated summary object
+let CURRENT_REPORTER = '';   // editable reporter name for this article
 let CURRENT_REAL_IDX = -1;   // real index in ALL for API calls
 let EDIT_MODE        = false; // briefing edit toggle
 let TW_EDIT_MODE     = false; // twitter social edit toggle
@@ -440,6 +441,7 @@ function openReader(i) {
   CURRENT_IDX      = i;
   CURRENT_SUMM     = null;
   CURRENT_REAL_IDX = -1;
+  CURRENT_REPORTER = '';
   EDIT_MODE        = false;
   TW_EDIT_MODE     = false;
   IG_EDIT_MODE     = false;
@@ -785,11 +787,14 @@ function collectEditedContent() {
   const catBtn  = document.querySelector('.sum-category-btn');
   const category = catBtn ? catBtn.textContent.trim() : (CURRENT_SUMM && CURRENT_SUMM.category) || 'World';
 
-  return { edited_title: title, edited_subtitle: subtitle || undefined, edited_body: body.trim(), category, selected_image: SELECTED_IMAGE || undefined };
+  const reporterEl = $('sum-reporter-input');
+  const reporter = reporterEl ? reporterEl.value.trim() : CURRENT_REPORTER;
+  return { edited_title: title, edited_subtitle: subtitle || undefined, edited_body: body.trim(), category, selected_image: SELECTED_IMAGE || undefined, reporter: reporter || undefined };
 }
 
 function renderSummary(s, realIdx) {
   CURRENT_SUMM = s;
+  CURRENT_REPORTER = (s.reporter || '').trim();
   const bodyHtml = bodyToHtml(s.body || '');
   const srcsHtml = IS_ADMIN ? (s.sources_list||[]).map((src,n)=>`
     <li class="sum-src-item">
@@ -818,7 +823,7 @@ function renderSummary(s, realIdx) {
       </div>
       <div class="sum-divider"></div>
       <div class="sum-body">${bodyHtml}</div>
-      ${s.reporter ? `<div class="sum-reporter">Reported by <strong>${esc(s.reporter)}</strong></div>` : ''}
+      <div class="sum-reporter">Reported by <input class="sum-reporter-input" id="sum-reporter-input" type="text" value="${esc(s.reporter || '')}" placeholder="Reporter name" oninput="CURRENT_REPORTER=this.value.trim()"></div>
       ${IS_ADMIN ? `<div class="sum-sources-block">
         <div class="sum-sources-title">Sources</div>
         <ol class="sum-src-list">${srcsHtml}</ol>
@@ -1315,8 +1320,7 @@ function openSocialPostModal() {
 }
 
 function _getSocialBrand() {
-  const el = $('smodal-author-input');
-  return el ? el.value.trim() || 'Robin CC' : 'Robin CC';
+  return CURRENT_REPORTER || '';
 }
 
 function onAuthorNameChange() { /* debounce handled by refreshOverlayImage on blur/button */ }

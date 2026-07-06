@@ -1272,6 +1272,8 @@ async def preview_publish_to_hocalwire(request: Request, idx: int):
     subtitle       = (body_json.get('edited_subtitle') or cached.get('subtitle') or cached.get('sub_heading') or main_article.get('sub_heading', '')).strip()
     selected_image = body_json.get('selected_image')
     category       = body_json.get('category') or cached.get('category') or 'General'
+    if body_json.get('reporter'):
+        cached['reporter'] = body_json['reporter']
 
     if not title or not body:
         return JSONResponse({'status': 'error', 'message': 'Summary has no title or body'}, status_code=400)
