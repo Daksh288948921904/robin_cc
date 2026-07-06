@@ -98,6 +98,9 @@ _USERS = {
     'Pankaj@Robin.cc': (
         'scrypt:32768:8:1$q6pdvdgyB5Cn7UMw$35229e09e483cdf1367be4f05c895d11cdfdb71538c150eba201cc89a23d8db5940e794747c1c386dc11d9e62f6070f7ce4539745f4fbbb0e0b1b1b257bbaac0'
     ),
+    'Thoyajaksh@robin.cc': (
+        'scrypt:32768:8:1$zef6aniEPcQz55Fl$5b7159fedf2fb12ca53d23834e6e41737795e13e05ecae3758c76dc0fbaf1e55a0a2ef0893f8454012ad2b2b284f890a11194bafa5f6b6a97e63691bfe477865'
+    ),
 }
 
 _ADMIN_EMAILS = {'Rohit@Robin.cc'}
