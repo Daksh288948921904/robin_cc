@@ -387,8 +387,8 @@ def _upload_to_catbox(filepath: Path) -> str:
         return ''
 
 
-def _apply_title_overlay(image_bytes: bytes, title: str, brand: str = 'Robin CC') -> bytes | None:
-    """Composite title text over a dark strip at the bottom 28% of the image.
+def _apply_title_overlay(image_bytes: bytes, title: str, brand: str = '') -> bytes | None:
+    """Draw a solid red lower-third bar (news-channel style) with white bold ALL-CAPS title.
 
     Returns JPEG bytes at 1200×675 (16:9), or None on failure.
     """
@@ -398,53 +398,38 @@ def _apply_title_overlay(image_bytes: bytes, title: str, brand: str = 'Robin CC'
         W, H = 1200, 675
         img = _PILImage.open(io.BytesIO(image_bytes)).convert('RGB')
         img = img.resize((W, H), _PILImage.LANCZOS)
-
-        # Gradient over bottom 28% (~189 px) — solid black at very bottom, fading up
-        grad_h = int(H * 0.28)
-        grad_y = H - grad_h
-        overlay = _PILImage.new('RGBA', (W, H), (0, 0, 0, 0))
-        od = _ImageDraw.Draw(overlay)
-        for row in range(grad_h):
-            alpha = int(200 * (row / grad_h))
-            od.rectangle([(0, grad_y + row), (W, grad_y + row + 1)], fill=(0, 0, 0, alpha))
-
-        img = _PILImage.composite(overlay, img.convert('RGBA'), overlay).convert('RGB')
         draw = _ImageDraw.Draw(img)
 
-        # Load font — static bold TTF, large size
-        font_size, brand_size = 48, 18
+        font_size = 46
         try:
-            font_path = str(_SOCIAL_FONT_PATH)
-            title_font = _ImageFont.truetype(font_path, font_size)
-            brand_font = _ImageFont.truetype(font_path, brand_size)
+            title_font = _ImageFont.truetype(str(_SOCIAL_FONT_PATH), font_size)
         except Exception:
             title_font = _ImageFont.load_default()
-            brand_font = title_font
 
-        # Pixel-aware word wrap — whole words only, max 2 lines
-        pad = 28
-        max_w = W - pad * 2
+        pad_x = 28
+        max_w  = W - pad_x * 2
+        title_upper = title.upper()
 
-        def _line_w(text):
+        def _lw(text):
             bb = title_font.getbbox(text)
             return bb[2] - bb[0]
 
-        words = title.split()
+        # Pixel-aware word wrap, max 2 lines
+        words = title_upper.split()
         lines, cur = [], ''
         for w in words:
             test = (cur + ' ' + w).strip()
-            if _line_w(test) <= max_w:
+            if _lw(test) <= max_w:
                 cur = test
             else:
                 if cur:
                     lines.append(cur)
                 cur = w
                 if len(lines) >= 1:
-                    # Fill second line with whole words, then truncate with ellipsis
                     second = cur
-                    for remaining_word in words[words.index(w) + 1:]:
-                        attempt = second + ' ' + remaining_word
-                        if _line_w(attempt + '…') <= max_w:
+                    for rw in words[words.index(w) + 1:]:
+                        attempt = second + ' ' + rw
+                        if _lw(attempt + '…') <= max_w:
                             second = attempt
                         else:
                             break
@@ -455,20 +440,20 @@ def _apply_title_overlay(image_bytes: bytes, title: str, brand: str = 'Robin CC'
             lines.append(cur)
         lines = lines[:2]
 
-        # Draw title with subtle text shadow for readability
-        lh = title_font.getbbox('Ag')[3] - title_font.getbbox('Ag')[1]
-        text_y = grad_y + 18
-        for line in lines:
-            # Shadow
-            draw.text((pad + 2, text_y + 2), line, font=title_font, fill=(0, 0, 0, 160))
-            # Main text
-            draw.text((pad, text_y), line, font=title_font, fill=(255, 255, 255))
-            text_y += lh + 8
+        # Measure text height and size the bar to fit
+        lh    = title_font.getbbox('Ag')[3] - title_font.getbbox('Ag')[1]
+        pad_y = 18
+        bar_h = len(lines) * (lh + 6) - 6 + pad_y * 2
+        bar_y = H - bar_h
 
-        # Brand label bottom-right
-        brand = (brand or 'Robin CC').strip()
-        bw = brand_font.getbbox(brand)[2] - brand_font.getbbox(brand)[0]
-        draw.text((W - bw - pad, H - 22), brand, font=brand_font, fill=(210, 210, 210))
+        # Solid red bar
+        draw.rectangle([(0, bar_y), (W, H)], fill=(200, 0, 0))
+
+        # White title text
+        text_y = bar_y + pad_y
+        for line in lines:
+            draw.text((pad_x, text_y), line, font=title_font, fill=(255, 255, 255))
+            text_y += lh + 6
 
         out = io.BytesIO()
         img.save(out, format='JPEG', quality=88)
