@@ -538,17 +538,21 @@ async def index(request: Request):
 async def get_articles(request: Request):
     admin = _is_admin(request)
     if admin:
+        # Admin sees only real scraped articles — skip any curated injections
         result = []
         for real_idx, a in enumerate(SCRAPED_ARTICLES):
+            if a.get('_curated_injection'):
+                continue
             entry = dict(a)
             entry['_server_idx'] = real_idx
             result.append(entry)
     else:
-        # Non-admin: serve curated articles from MongoDB
+        # Non-admin: serve curated articles from MongoDB.
         # Cross-reference with current scrape to get valid server indices.
         # If a curated article is no longer in the current scrape (e.g. scraper
         # ran after it was curated), inject it into SCRAPED_ARTICLES so all
         # downstream endpoints (generate, publish, etc.) can look it up by idx.
+        # Injected entries are flagged _curated_injection=True so admin view skips them.
         url_to_idx = {a.get('source_url'): i for i, a in enumerate(SCRAPED_ARTICLES) if a.get('source_url')}
         col = _get_curated_col()
         curated_docs = list(col.find({}, {'_id': 0}).sort('curated_at', -1)) if col is not None else []
@@ -561,6 +565,7 @@ async def get_articles(request: Request):
                 new_idx = len(SCRAPED_ARTICLES)
                 injected = {k: v for k, v in doc.items() if k != '_id'}
                 injected.pop('curated_at', None)
+                injected['_curated_injection'] = True
                 SCRAPED_ARTICLES.append(injected)
                 url_to_idx[src_url] = new_idx
             entry['_server_idx'] = url_to_idx.get(src_url, -1)
