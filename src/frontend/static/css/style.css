@@ -2860,7 +2860,7 @@ body::before {
 
 /* ── Phone frame ── */
 .sp-phone-frame{
-  width:100%;max-width:380px;
+  width:100%;max-width:520px;
 }
 
 /* ── Base card ── */
@@ -2895,9 +2895,10 @@ body::before {
 .sp-ig-sub{font-size:11px;color:#737373}
 .sp-ig-more{font-size:18px;font-weight:700;color:#000;letter-spacing:1px;cursor:pointer}
 .sp-ig-image-placeholder{
-  width:100%;aspect-ratio:1/1;
+  width:100%;aspect-ratio:16/9;
   background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);
   display:flex;align-items:center;justify-content:center;
+  overflow:hidden;
 }
 .sp-ig-actions{
   display:flex;align-items:center;justify-content:space-between;

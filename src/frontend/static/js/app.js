@@ -1353,7 +1353,7 @@ async function _loadSocialOverlayImage(realIdx) {
 
 function _renderOverlayOnCards(overlayUrl) {
   const igImg = $('sp-ig-image');
-  if (igImg) igImg.innerHTML = `<img src="${esc(overlayUrl)}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block">`;
+  if (igImg) igImg.innerHTML = `<img src="${esc(overlayUrl)}" alt="" style="width:100%;aspect-ratio:16/9;object-fit:cover;display:block">`;
   ['sp-tw-image','sp-fb-image','sp-li-image'].forEach(id => {
     const el = $(id);
     if (el) {

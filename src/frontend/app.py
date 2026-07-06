@@ -400,13 +400,13 @@ def _apply_title_overlay(image_bytes: bytes, title: str, brand: str = '') -> byt
         img = img.resize((W, H), _PILImage.LANCZOS)
         draw = _ImageDraw.Draw(img)
 
-        font_size = 46
+        font_size = 72
         try:
             title_font = _ImageFont.truetype(str(_SOCIAL_FONT_PATH), font_size)
         except Exception:
             title_font = _ImageFont.load_default()
 
-        pad_x = 28
+        pad_x = 32
         max_w  = W - pad_x * 2
         title_upper = title.upper()
 
@@ -1215,7 +1215,7 @@ async def push_social_posts(request: Request, idx: int):
         blocks = [{'type': 'header', 'text': {'type': 'plain_text', 'text': f'🚀 Social Push — {heading[:72]}', 'emoji': True}}]
         if slack_image:
             blocks.append({'type': 'image', 'image_url': slack_image, 'alt_text': heading})
-        for _p, label, content in platform_rows:
+        for _, label, content in platform_rows:
             if content:
                 blocks.append({'type': 'section', 'text': {'type': 'mrkdwn', 'text': f'*{label}*\n{content[:2900]}'}})
                 blocks.append({'type': 'divider'})
