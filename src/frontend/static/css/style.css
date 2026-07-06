@@ -3089,6 +3089,30 @@ body::before {
 .sp-li-img-wrap{width:100%;max-height:240px;object-fit:cover;display:block}
 .sp-img-err{padding:20px;text-align:center;font-size:12px;color:#888;background:#f5f5f5}
 
+/* ── Social overlay image strip ── */
+.smodal-img-strip{
+  margin:0 20px 14px;
+  border-radius:10px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.08);
+  background:#0d0d12;
+  min-height:48px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.smodal-img-loading{
+  display:flex;align-items:center;gap:8px;
+  font-size:12px;color:#94a3b8;padding:14px;
+}
+.smodal-overlay-img{
+  width:100%;display:block;
+  aspect-ratio:16/9;object-fit:cover;
+}
+.smodal-img-err{
+  font-size:11px;color:#64748b;padding:12px 16px;text-align:center;
+}
+
 /* ═══════════════════════════════════════════════
    TV SCRIPT TELEPROMPTER CARD
 ═══════════════════════════════════════════════ */

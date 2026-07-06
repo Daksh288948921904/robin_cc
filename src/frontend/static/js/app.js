@@ -1299,6 +1299,8 @@ let _socialTvCache       = {};      // realIdx → tv script string
 let _socialPodcastCache  = {};      // realIdx → podcast/radio script string
 let _activeSocialTab     = 'instagram';
 
+let _socialOverlayCache = {};   // realIdx → overlay image URL (blob or data)
+
 function openSocialPostModal() {
   const realIdx = CURRENT_REAL_IDX;
   if (realIdx < 0) { toast('err', 'Open an article first'); return; }
@@ -1309,6 +1311,50 @@ function openSocialPostModal() {
   } else {
     _fetchSocialPosts(realIdx);
   }
+  _loadSocialOverlayImage(realIdx);
+}
+
+async function _loadSocialOverlayImage(realIdx) {
+  const strip     = $('smodal-img-strip');
+  const loadingEl = $('smodal-img-loading');
+  const img       = $('smodal-overlay-img');
+  const errEl     = $('smodal-img-err');
+  if (!strip) return;
+
+  loadingEl.classList.remove('hidden');
+  img.classList.add('hidden');
+  errEl.classList.add('hidden');
+
+  const siParam = SELECTED_IMAGE ? `?selected_image=${encodeURIComponent(SELECTED_IMAGE)}` : '';
+  try {
+    const res = await fetch(`/api/articles/${realIdx}/social-image${siParam}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    // Revoke previous blob URL to avoid leaks
+    if (_socialOverlayCache[realIdx]) URL.revokeObjectURL(_socialOverlayCache[realIdx]);
+    _socialOverlayCache[realIdx] = url;
+    img.src = url;
+    img.classList.remove('hidden');
+    // Also swap the image on each platform card preview
+    _renderOverlayOnCards(url);
+  } catch(e) {
+    errEl.classList.remove('hidden');
+  } finally {
+    loadingEl.classList.add('hidden');
+  }
+}
+
+function _renderOverlayOnCards(overlayUrl) {
+  const igImg = $('sp-ig-image');
+  if (igImg) igImg.innerHTML = `<img src="${esc(overlayUrl)}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block">`;
+  ['sp-tw-image','sp-fb-image','sp-li-image'].forEach(id => {
+    const el = $(id);
+    if (el) {
+      el.innerHTML = `<img src="${esc(overlayUrl)}" alt="" style="width:100%;display:block;border-radius:8px">`;
+      el.classList.remove('hidden');
+    }
+  });
 }
 
 // ── TV Script Modal ───────────────────────────────
@@ -1593,19 +1639,32 @@ async function pushSocialToAll() {
   Object.values(chips).forEach(c => { c.className = 'spush-chip pending'; });
 
   try {
-    const res  = await fetch(`/api/articles/${realIdx}/push-social`, { method: 'POST' });
+    const body = { selected_image: SELECTED_IMAGE || '' };
+    const res  = await fetch(`/api/articles/${realIdx}/push-social`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
     const data = await res.json();
-    if (data.status === 'success') {
-      // All platforms routed via Slack — mark all ok if Slack succeeded
-      Object.keys(chips).forEach(p => {
+    const results = data.results || {};
+
+    // Update per-platform chips from results
+    Object.keys(chips).forEach(p => {
+      const r = results[p];
+      if (!r || r === 'skipped') {
+        chips[p].className = 'spush-chip';
+      } else if (r === 'ok') {
         chips[p].className = 'spush-chip ok';
-        chips[p].textContent = chips[p].textContent.split(' ')[0] + ' ' +
-          ({ instagram:'Instagram', twitter:'X', facebook:'Facebook', linkedin:'LinkedIn' }[p]);
-      });
+      } else {
+        chips[p].className = 'spush-chip err';
+      }
+    });
+
+    const anyOk = Object.values(results).some(v => v === 'ok');
+    if (anyOk) {
       label.textContent = 'Pushed ✓';
-      toast('ok', 'Social posts pushed to all platforms via Slack!');
+      toast('ok', data.message || 'Social posts pushed!');
     } else {
-      Object.values(chips).forEach(c => { c.className = 'spush-chip err'; });
       label.textContent = 'Push to All';
       toast('err', data.message || 'Push failed');
     }

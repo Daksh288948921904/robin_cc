@@ -33,6 +33,7 @@ import requests as _requests
 
 _GN_URL = (os.environ.get('GLOBAL_NEWS_URL') or '').rstrip('/')
 _GN_KEY = os.environ.get('GLOBAL_NEWS_API_KEY', '')
+AYRSHARE_API_KEY = os.environ.get('AYRSHARE_API_KEY', '')
 
 def _push_to_global_news(article: dict, feed_id: str = '') -> str:
     """Push article to Global News and return the GN UUID (empty string on failure)."""
@@ -360,7 +361,9 @@ _autogen_state: dict = {}  # {str(idx): 'pending'|'running'|'done'|'error'}
 _autogen_lock = threading.Lock()
 _autogen_sem  = threading.Semaphore(3)  # max 3 concurrent
 
-AI_IMAGES_STATIC_DIR = Path(__file__).parent / 'static' / 'ai_images'
+AI_IMAGES_STATIC_DIR  = Path(__file__).parent / 'static' / 'ai_images'
+_SOCIAL_IMAGES_DIR    = Path(__file__).parent / 'static' / 'social_images'
+_SOCIAL_FONT_PATH     = Path(__file__).parent / 'static' / 'fonts' / 'Montserrat-Bold.ttf'
 
 
 def _upload_to_catbox(filepath: Path) -> str:
@@ -382,6 +385,90 @@ def _upload_to_catbox(filepath: Path) -> str:
     except Exception as e:
         logger.warning(f"Catbox upload failed (will use Pollinations fallback): {e}")
         return ''
+
+
+def _apply_title_overlay(image_bytes: bytes, title: str) -> bytes | None:
+    """Composite title text over a dark strip at the bottom 20% of the image.
+
+    Returns JPEG bytes at 1200×675 (16:9), or None on failure.
+    """
+    try:
+        from PIL import Image as _PILImage, ImageDraw as _ImageDraw, ImageFont as _ImageFont
+
+        W, H = 1200, 675
+        img = _PILImage.open(io.BytesIO(image_bytes)).convert('RGB')
+        img = img.resize((W, H), _PILImage.LANCZOS)
+
+        # Build semi-transparent gradient over bottom 20%
+        grad_h = int(H * 0.20)   # 135 px
+        grad_y = H - grad_h       # 540
+        overlay = _PILImage.new('RGBA', (W, H), (0, 0, 0, 0))
+        od = _ImageDraw.Draw(overlay)
+        for row in range(grad_h):
+            alpha = int(185 * (row / grad_h))
+            od.rectangle([(0, grad_y + row), (W, grad_y + row + 1)], fill=(0, 0, 0, alpha))
+
+        img = _PILImage.composite(overlay, img.convert('RGBA'), overlay).convert('RGB')
+        draw = _ImageDraw.Draw(img)
+
+        # Load font
+        font_size, brand_size = 34, 15
+        try:
+            font_path = str(_SOCIAL_FONT_PATH)
+            title_font = _ImageFont.truetype(font_path, font_size)
+            brand_font = _ImageFont.truetype(font_path, brand_size)
+        except Exception:
+            title_font = _ImageFont.load_default()
+            brand_font = title_font
+
+        # Pixel-aware word wrap — max 2 lines inside the gradient strip
+        pad = 22
+        max_w = W - pad * 2
+
+        def _line_w(text):
+            bb = title_font.getbbox(text)
+            return bb[2] - bb[0]
+
+        words = title.split()
+        lines, cur = [], ''
+        for w in words:
+            test = (cur + ' ' + w).strip()
+            if _line_w(test) <= max_w:
+                cur = test
+            else:
+                if cur:
+                    lines.append(cur)
+                cur = w
+                if len(lines) >= 1:
+                    # Truncate remaining into second line
+                    remaining = ' '.join(words[words.index(w):])
+                    while remaining and _line_w(remaining + '…') > max_w:
+                        remaining = remaining.rsplit(' ', 1)[0]
+                    lines.append(remaining.strip() + '…')
+                    cur = ''
+                    break
+        if cur:
+            lines.append(cur)
+        lines = lines[:2]
+
+        # Draw title
+        lh = title_font.getbbox('Ag')[3] - title_font.getbbox('Ag')[1]
+        text_y = grad_y + 10
+        for line in lines:
+            draw.text((pad, text_y), line, font=title_font, fill=(255, 255, 255))
+            text_y += lh + 5
+
+        # Brand label bottom-right
+        brand = 'Robin CC'
+        bw = brand_font.getbbox(brand)[2] - brand_font.getbbox(brand)[0]
+        draw.text((W - bw - pad, H - 22), brand, font=brand_font, fill=(210, 210, 210))
+
+        out = io.BytesIO()
+        img.save(out, format='JPEG', quality=88)
+        return out.getvalue()
+    except Exception as e:
+        logger.warning('_apply_title_overlay failed: %s', e)
+        return None
 
 
 _scrape_state = {
@@ -1028,50 +1115,127 @@ async def push_social_posts(request: Request, idx: int):
     if not sp or not sp.get('posts'):
         return JSONResponse({'status': 'error', 'message': 'Generate social posts first'}, status_code=400)
 
-    posts     = sp['posts']
-    image_url = sp.get('image_url', '')
-    heading   = (SUMMARIES.get(key) or {}).get('title') or (
+    posts   = sp['posts']
+    heading = (SUMMARIES.get(key) or {}).get('title') or (
         SCRAPED_ARTICLES[idx].get('heading', 'Article') if 0 <= idx < len(SCRAPED_ARTICLES) else 'Article'
     )
 
+    try:
+        body_json = await request.json()
+    except Exception:
+        body_json = {}
+
+    selected_image = (body_json.get('selected_image') or sp.get('image_url', '')).strip()
+    results = {}
+
+    # ── Ayrshare path ────────────────────────────────────────────
+    if AYRSHARE_API_KEY:
+        article = SCRAPED_ARTICLES[idx] if 0 <= idx < len(SCRAPED_ARTICLES) else {}
+
+        # Resolve raw image URL
+        si = selected_image if not selected_image.startswith('/static/') else ''
+        raw_image_url = si or AI_IMAGE_PUBLIC.get(key) or AI_IMAGES.get(key, '') or \
+                        article.get('image_url', '') or article.get('top_image', '')
+
+        # Build overlay image and upload to Catbox for a public URL
+        public_image_url = ''
+        if raw_image_url:
+            try:
+                if raw_image_url.startswith('/static/'):
+                    rel = raw_image_url[len('/static/'):]
+                    img_bytes = (_static_dir / rel).read_bytes()
+                else:
+                    r = _requests.get(raw_image_url, timeout=12, headers={'User-Agent': 'robin-cc/1.0'})
+                    r.raise_for_status()
+                    img_bytes = r.content
+
+                overlay_bytes = _apply_title_overlay(img_bytes, heading)
+                if overlay_bytes:
+                    _SOCIAL_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+                    ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                    tmp_path = _SOCIAL_IMAGES_DIR / f'social_{key}_{ts}.jpg'
+                    tmp_path.write_bytes(overlay_bytes)
+                    public_image_url = _upload_to_catbox(tmp_path) or ''
+            except Exception as e:
+                logger.warning('push_social overlay/upload error: %s', e)
+
+        platforms = ['instagram', 'facebook', 'twitter', 'linkedin']
+        platform_posts = {
+            'instagram': posts.get('instagram', ''),
+            'facebook':  posts.get('facebook', ''),
+            'twitter':   posts.get('twitter', ''),
+            'linkedin':  posts.get('linkedin', ''),
+        }
+
+        # Post each platform via Ayrshare
+        for platform in platforms:
+            caption = platform_posts.get(platform, '')
+            if not caption:
+                results[platform] = 'skipped'
+                continue
+            payload = {
+                'post':      caption,
+                'platforms': [platform],
+            }
+            if public_image_url:
+                payload['mediaUrls'] = [public_image_url]
+            try:
+                r = _requests.post(
+                    'https://app.ayrshare.com/api/post',
+                    headers={
+                        'Authorization': f'Bearer {AYRSHARE_API_KEY}',
+                        'Content-Type': 'application/json',
+                    },
+                    json=payload,
+                    timeout=20,
+                )
+                data = r.json() if r.content else {}
+                if r.ok and data.get('status') == 'success':
+                    results[platform] = 'ok'
+                else:
+                    results[platform] = f'err:{r.status_code} {data.get("message","")}'
+                    logger.warning('Ayrshare %s error: %s', platform, results[platform])
+            except Exception as e:
+                results[platform] = f'err:{e}'
+                logger.warning('Ayrshare %s exception: %s', platform, e)
+
+        any_ok = any(v == 'ok' for v in results.values())
+        return JSONResponse({
+            'status': 'success' if any_ok else 'error',
+            'results': results,
+            'message': 'Posted via Ayrshare' if any_ok else 'All platforms failed',
+        })
+
+    # ── Slack fallback ───────────────────────────────────────────
     slack_url = os.environ.get('SLACK_WEBHOOK_URL', '').strip()
-    results   = {}
+    if not slack_url:
+        return JSONResponse({'status': 'error', 'message': 'No AYRSHARE_API_KEY or SLACK_WEBHOOK_URL configured'}, status_code=400)
 
-    if slack_url:
-        try:
-            platform_rows = [
-                ('instagram', '📸 Instagram', posts.get('instagram', '')),
-                ('twitter',   '🐦 X / Twitter', posts.get('twitter', '')),
-                ('facebook',  '👥 Facebook', posts.get('facebook', '')),
-                ('linkedin',  '💼 LinkedIn', posts.get('linkedin', '')),
-            ]
-            blocks = [
-                {
-                    "type": "header",
-                    "text": {"type": "plain_text", "text": f"🚀 Social Push — {heading[:72]}", "emoji": True},
-                },
-            ]
-            if image_url:
-                blocks.append({"type": "image", "image_url": image_url, "alt_text": heading})
-            for _key, label, content in platform_rows:
-                if content:
-                    blocks.append({
-                        "type": "section",
-                        "text": {"type": "mrkdwn", "text": f"*{label}*\n{content[:2900]}"},
-                    })
-                    blocks.append({"type": "divider"})
+    try:
+        platform_rows = [
+            ('instagram', '📸 Instagram', posts.get('instagram', '')),
+            ('twitter',   '🐦 X / Twitter', posts.get('twitter', '')),
+            ('facebook',  '👥 Facebook', posts.get('facebook', '')),
+            ('linkedin',  '💼 LinkedIn', posts.get('linkedin', '')),
+        ]
+        slack_image = selected_image or sp.get('image_url', '')
+        blocks = [{'type': 'header', 'text': {'type': 'plain_text', 'text': f'🚀 Social Push — {heading[:72]}', 'emoji': True}}]
+        if slack_image:
+            blocks.append({'type': 'image', 'image_url': slack_image, 'alt_text': heading})
+        for _p, label, content in platform_rows:
+            if content:
+                blocks.append({'type': 'section', 'text': {'type': 'mrkdwn', 'text': f'*{label}*\n{content[:2900]}'}})
+                blocks.append({'type': 'divider'})
 
-            r = _requests.post(slack_url, json={"blocks": blocks}, timeout=8)
-            if r.ok:
-                results = {p: 'ok' for p, _, c in platform_rows if c}
-            else:
-                results = {p: f'err:{r.status_code}' for p, _, c in platform_rows if c}
-                return JSONResponse({'status': 'error', 'message': f'Slack returned {r.status_code}', 'results': results}, status_code=502)
-        except Exception as e:
-            logger.warning('push_social_posts Slack error: %s', e)
-            return JSONResponse({'status': 'error', 'message': str(e)}, status_code=502)
-    else:
-        return JSONResponse({'status': 'error', 'message': 'No SLACK_WEBHOOK_URL configured'}, status_code=400)
+        r = _requests.post(slack_url, json={'blocks': blocks}, timeout=8)
+        if r.ok:
+            results = {p: 'ok' for p, _, c in platform_rows if c}
+        else:
+            results = {p: f'err:{r.status_code}' for p, _, c in platform_rows if c}
+            return JSONResponse({'status': 'error', 'message': f'Slack returned {r.status_code}', 'results': results}, status_code=502)
+    except Exception as e:
+        logger.warning('push_social_posts Slack error: %s', e)
+        return JSONResponse({'status': 'error', 'message': str(e)}, status_code=502)
 
     return JSONResponse({'status': 'success', 'results': results})
 
@@ -1436,6 +1600,50 @@ async def trigger_video_workflow(request: Request, idx: int):
         _record_activity(key, article, video_sent=True)
         return JSONResponse({'status': 'success', 'message': f'Sent to video workflow (HTTP {status_code})'})
     return JSONResponse({'status': 'error', 'message': f'Webhook returned HTTP {status_code}'}, status_code=502)
+
+
+@app.get('/api/articles/{idx}/social-image')
+async def get_social_image(request: Request, idx: int, selected_image: str = ''):
+    """Return a JPEG (1200×675) of the article photo with title overlaid at the bottom."""
+    if idx < 0 or idx >= len(SCRAPED_ARTICLES):
+        return JSONResponse({'status': 'error', 'message': 'Article not found'}, status_code=404)
+
+    article = SCRAPED_ARTICLES[idx]
+    key     = str(idx)
+
+    # Image priority: caller-supplied → AI public CDN → AI local → scraped
+    si = (selected_image or '').strip()
+    if si.startswith('/static/'):
+        si = ''
+    image_url = si or AI_IMAGE_PUBLIC.get(key) or AI_IMAGES.get(key, '') or \
+                article.get('image_url', '') or article.get('top_image', '')
+
+    if not image_url:
+        return JSONResponse({'status': 'error', 'message': 'No image for this article'}, status_code=404)
+
+    title = (SUMMARIES.get(key) or {}).get('title') or \
+            article.get('heading', article.get('title', ''))
+
+    try:
+        if image_url.startswith('/static/'):
+            rel = image_url[len('/static/'):]
+            local = _static_dir / rel
+            if not local.exists():
+                return JSONResponse({'status': 'error', 'message': 'Local image file missing'}, status_code=404)
+            image_bytes = local.read_bytes()
+        else:
+            r = _requests.get(image_url, timeout=12, headers={'User-Agent': 'robin-cc/1.0'})
+            r.raise_for_status()
+            image_bytes = r.content
+    except Exception as e:
+        return JSONResponse({'status': 'error', 'message': f'Image fetch failed: {e}'}, status_code=502)
+
+    jpeg_bytes = _apply_title_overlay(image_bytes, title)
+    if not jpeg_bytes:
+        return JSONResponse({'status': 'error', 'message': 'Overlay generation failed'}, status_code=500)
+
+    return Response(content=jpeg_bytes, media_type='image/jpeg',
+                    headers={'Cache-Control': 'no-store'})
 
 
 RIG_SERVER_URL = os.environ.get('RIG_SERVER_URL', 'http://localhost:8000')
