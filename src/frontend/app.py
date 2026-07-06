@@ -83,6 +83,7 @@ def _auto_load_articles():
 async def lifespan(app: FastAPI):
     _auto_load_articles()
     _load_curated()
+    _reinject_curated()
     yield
 
 
@@ -147,6 +148,35 @@ def _load_curated():
         print(f'[Startup] Loaded {len(_CURATED_URLS)} curated URLs from MongoDB')
     except Exception as e:
         print(f'[Startup] Curated load failed: {e}')
+
+
+def _reinject_curated():
+    """Append any curated articles missing from SCRAPED_ARTICLES.
+
+    Called after startup load and after every scrape so non-admin indices are
+    stable for the full scrape cycle instead of being assigned on first request.
+    """
+    col = _get_curated_col()
+    if col is None:
+        return
+    try:
+        docs = list(col.find({}, {'_id': 0}).sort('curated_at', -1))
+    except Exception as e:
+        print(f'[Curate] Re-inject read failed: {e}')
+        return
+    url_to_idx = {a.get('source_url'): i for i, a in enumerate(SCRAPED_ARTICLES) if a.get('source_url')}
+    injected = 0
+    for doc in docs:
+        src = doc.get('source_url', '')
+        if src and src not in url_to_idx:
+            entry = {k: v for k, v in doc.items() if k != '_id'}
+            entry.pop('curated_at', None)
+            entry['_curated_injection'] = True
+            SCRAPED_ARTICLES.append(entry)
+            url_to_idx[src] = len(SCRAPED_ARTICLES) - 1
+            injected += 1
+    if injected:
+        print(f'[Curate] Re-injected {injected} curated article(s) into SCRAPED_ARTICLES')
 
 
 def _curate_add(article: dict):
@@ -397,6 +427,8 @@ def _run_scrape(max_articles: int):
         AI_IMAGES.clear()
         AI_IMAGE_PUBLIC.clear()
 
+        _reinject_curated()
+
         filepath = save_articles_to_json(articles)
         print(
             f"[Scraper] Done — {len(articles)} articles from "
@@ -548,11 +580,9 @@ async def get_articles(request: Request):
             result.append(entry)
     else:
         # Non-admin: serve curated articles from MongoDB.
-        # Cross-reference with current scrape to get valid server indices.
-        # If a curated article is no longer in the current scrape (e.g. scraper
-        # ran after it was curated), inject it into SCRAPED_ARTICLES so all
-        # downstream endpoints (generate, publish, etc.) can look it up by idx.
-        # Injected entries are flagged _curated_injection=True so admin view skips them.
+        # Curated articles missing from the current scrape are already injected
+        # into SCRAPED_ARTICLES (flagged _curated_injection=True) at startup and
+        # after every scrape, so their indices are stable for the full cycle.
         url_to_idx = {a.get('source_url'): i for i, a in enumerate(SCRAPED_ARTICLES) if a.get('source_url')}
         col = _get_curated_col()
         curated_docs = list(col.find({}, {'_id': 0}).sort('curated_at', -1)) if col is not None else []
@@ -560,14 +590,6 @@ async def get_articles(request: Request):
         for doc in curated_docs:
             entry = {k: v for k, v in doc.items() if k != '_id'}
             src_url = doc.get('source_url', '')
-            if src_url and src_url not in url_to_idx:
-                # Article aged out of SCRAPED_ARTICLES — re-inject it so idx stays valid
-                new_idx = len(SCRAPED_ARTICLES)
-                injected = {k: v for k, v in doc.items() if k != '_id'}
-                injected.pop('curated_at', None)
-                injected['_curated_injection'] = True
-                SCRAPED_ARTICLES.append(injected)
-                url_to_idx[src_url] = new_idx
             entry['_server_idx'] = url_to_idx.get(src_url, -1)
             result.append(entry)
     return JSONResponse({
